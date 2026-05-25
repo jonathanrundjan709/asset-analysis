@@ -1,200 +1,276 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Google Ads Asset Dashboard</title>
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <div class="shell">
-      <aside class="sidebar">
-        <div>
-          <p class="eyebrow">Glints Performance Ops</p>
-          <h1>Google Ads Asset Dashboard</h1>
-          <p class="lede">
-            Upload Google Ads CSV exports and review campaign, ad group, app
-            asset performance, installs, click quality, and cost efficiency.
-          </p>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Asset & Placement Analysis</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <h1>Asset & Placement Analysis</h1>
+        <span class="header-badge">Google Ads + Meta Ads</span>
+      </div>
+      <div class="header-right">
+        <div class="header-stats">
+          <div class="stat-pill"><span id="statFiles">0</span> files</div>
+          <div class="stat-pill"><span id="statRows">0</span> rows</div>
+          <div class="stat-pill"><span id="statAssets">0</span> assets</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="upload">Upload & Configure</button>
+      <button class="nav-tab" data-tab="google-analysis">Google Ads Analysis</button>
+      <button class="nav-tab" data-tab="meta-analysis">Meta Ads Analysis</button>
+      <button class="nav-tab" data-tab="placement">Placement Analysis</button>
+      <button class="nav-tab" data-tab="wow">Week-over-Week</button>
+      <button class="nav-tab" data-tab="summary">Summary & Export</button>
+    </nav>
+
+    <!-- TAB: Upload & Configure -->
+    <section id="tab-upload" class="tab-content active">
+      <div class="content-grid">
+        <!-- Upload Area -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Upload CSV Files</h2>
+            <div class="panel-actions">
+              <button id="btnLoadSample" class="btn btn-ghost">Load Sample Data</button>
+              <button id="btnClearAll" class="btn btn-ghost btn-danger">Clear All</button>
+            </div>
+          </div>
+          <p class="panel-desc">Upload one or many CSV files from Google Ads or Meta Ads. The system will auto-detect the platform.</p>
+          <div class="upload-zone" id="uploadZone">
+            <div class="upload-icon">
+              <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+            </div>
+            <p class="upload-text">Drag & drop CSV files here or click to browse</p>
+            <p class="upload-hint">Supports multiple files. Auto-detects Google Ads vs Meta Ads.</p>
+            <input type="file" id="fileInput" accept=".csv" multiple hidden />
+          </div>
         </div>
 
-        <section class="panel stack">
-          <div class="section-title">
-            <h2>Reference Time</h2>
-            <span class="badge">Report context</span>
+        <!-- Guardrail Configuration -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Placement Guardrails</h2>
+            <button id="btnAddGuardrail" class="btn btn-ghost">+ Add Campaign</button>
           </div>
-          <label class="field">
-            <span>Timezone label</span>
-            <input id="timezoneLabel" type="text" value="Asia/Jakarta" />
-          </label>
-          <label class="field">
-            <span>Reference datetime</span>
-            <input id="referenceDatetime" type="datetime-local" />
-          </label>
-          <div id="referenceSummary" class="muted small"></div>
-        </section>
-
-        <section class="panel stack">
-          <div class="section-title">
-            <h2>Analysis Rules</h2>
-            <span class="badge">Auto</span>
-          </div>
-          <p class="muted small">
-            The analysis highlights efficient assets, weak Cost / Install, high
-            spend with low installs, best click quality, and low CTR watchouts.
-          </p>
-        </section>
-      </aside>
-
-      <main class="main">
-        <section class="hero">
-          <div>
-            <p class="eyebrow">Google Ads</p>
-            <h2>Upload Google Ads CSV and review app asset performance.</h2>
-          </div>
-          <div class="hero-stats">
-            <div class="hero-stat">
-              <span id="datasetCount">0</span>
-              <small>datasets</small>
-            </div>
-            <div class="hero-stat">
-              <span id="rowCount">0</span>
-              <small>rows</small>
-            </div>
-            <div class="hero-stat">
-              <span id="campaignCount">0</span>
-              <small>assets</small>
-            </div>
-          </div>
-        </section>
-
-        <section class="tabs">
-          <button class="tab active" data-tab="upload">Upload</button>
-          <button class="tab" data-tab="campaigns">Asset Performance</button>
-        </section>
-
-        <section id="upload" class="tab-panel active">
-          <div class="panel stack">
-            <div class="section-title">
-              <h2>Upload Google Ads File</h2>
-              <div class="inline-actions">
-                <button id="loadSampleBtn" class="ghost-button">Load sample data</button>
-                <button id="clearAllBtn" class="ghost-button">Clear all data</button>
+          <p class="panel-desc">Set max cost share per placement for each campaign.</p>
+          <div id="guardrailConfig" class="guardrail-config">
+            <div class="guardrail-defaults">
+              <h4>Meta Ads (Default)</h4>
+              <div class="guardrail-row">
+                <span>Instagram</span>
+                <input type="number" class="guardrail-input" id="metaIgGuardrail" value="59" min="0" max="100" />
+                <span>%</span>
+              </div>
+              <div class="guardrail-row">
+                <span>Facebook</span>
+                <input type="number" class="guardrail-input" id="metaFbGuardrail" value="49" min="0" max="100" />
+                <span>%</span>
               </div>
             </div>
-            <p class="muted">
-              Add one or more Google Ads CSV exports. After upload, map columns
-              so the app knows which metrics to use.
-            </p>
-            <div class="uploader-grid">
-              <label class="upload-card">
-                <span>Google Ads CSV</span>
-                <input data-source="google_ads" class="file-input" type="file" accept=".csv" />
-              </label>
-            </div>
-          </div>
-
-          <div id="datasetOverview" class="panel stack"></div>
-          <div id="datasetContainer" class="stack"></div>
-        </section>
-
-        <section id="campaigns" class="tab-panel">
-          <div class="panel stack">
-            <div class="section-title">
-              <h2>Executive Summary</h2>
-              <span class="badge">Auto analysis</span>
-            </div>
-            <div id="analysisSummary" class="analysis-grid"></div>
-          </div>
-
-          <div class="panel stack">
-            <div class="section-title">
-              <h2>Asset Scope</h2>
-              <span class="badge">Google Ads only</span>
-            </div>
-            <div class="toolbar">
-              <label class="field grow">
-                <span>Search</span>
-                <input id="campaignSearch" type="text" placeholder="Search campaign, ad group, or asset" />
-              </label>
-              <label class="field">
-                <span>Sort by</span>
-                <select id="sortBy">
-                  <option value="cost">Cost</option>
-                  <option value="count">Count</option>
-                  <option value="impressions">Impr.</option>
-                  <option value="clicks">Clicks</option>
-                  <option value="ctr">CTR</option>
-                  <option value="clickToInstall">Clicks &gt; Install</option>
-                  <option value="installs">Installs</option>
-                  <option value="costPerInstall">Cost / Install</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div class="kpi-grid">
-            <div class="panel metric-card">
-              <small>Cost</small>
-              <strong id="totalSpendCard">$0.00</strong>
-            </div>
-            <div class="panel metric-card">
-              <small>Installs</small>
-              <strong id="totalInstallsCard">0</strong>
-            </div>
-            <div class="panel metric-card">
-              <small>Cost / Install</small>
-              <strong id="avgCpiCard">$0.00</strong>
-            </div>
-            <div class="panel metric-card">
-              <small>Clicks</small>
-              <strong id="flaggedCountCard">0</strong>
-            </div>
-          </div>
-
-          <div class="panel stack">
-            <div class="section-title">
-              <h2>Asset Performance</h2>
-              <span class="badge">By app asset</span>
-            </div>
-            <div class="table-wrap">
-              <table id="campaignTable">
-                <thead></thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-      </main>
-    </div>
-
-    <template id="datasetTemplate">
-      <section class="panel dataset-card stack">
-        <div class="section-title">
-          <div class="stack compact">
-            <h2 class="dataset-title"></h2>
-            <div class="dataset-badges"></div>
-          </div>
-          <div class="inline-actions">
-            <button class="ghost-button preview-toggle-btn" type="button">Show preview</button>
-            <button class="ghost-button remove-dataset-btn" type="button">Remove</button>
+            <div id="googleGuardrails" class="guardrail-campaigns"></div>
           </div>
         </div>
-        <div class="dataset-meta muted small"></div>
-        <div class="mapped-summary muted small"></div>
-        <div class="mapping-grid"></div>
-        <div class="preview-wrap hidden">
-          <div class="table-wrap">
-            <table class="preview-table">
+      </div>
+
+      <!-- Uploaded Files List -->
+      <div class="panel" id="filesPanel" style="display:none;">
+        <div class="panel-header">
+          <h2>Uploaded Files</h2>
+          <span class="badge" id="fileCountBadge">0 files</span>
+        </div>
+        <div id="filesList" class="files-list"></div>
+      </div>
+
+      <!-- Data Preview -->
+      <div class="panel" id="previewPanel" style="display:none;">
+        <div class="panel-header">
+          <h2>Data Preview</h2>
+          <span class="badge">First 10 rows</span>
+        </div>
+        <div class="table-scroll">
+          <table id="previewTable">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Google Ads Analysis -->
+    <section id="tab-google-analysis" class="tab-content">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Google Ads Asset Analysis</h2>
+          <div class="panel-actions">
+            <button class="btn btn-ghost export-btn" data-export="google">Export CSV</button>
+          </div>
+        </div>
+        <div id="googleNoData" class="empty-state">
+          <p>No Google Ads data uploaded yet. Upload CSV files to generate analysis.</p>
+        </div>
+        <div id="googleAnalysis" style="display:none;">
+          <!-- Asset Type Summary Cards -->
+          <div id="googleAssetTypeSummary" class="asset-type-cards"></div>
+          <!-- Benchmarks -->
+          <div id="googleBenchmarks" class="benchmarks-section"></div>
+          <!-- Main Table -->
+          <div class="table-scroll">
+            <table id="googleTable" class="analysis-table">
               <thead></thead>
               <tbody></tbody>
             </table>
           </div>
         </div>
-      </section>
-    </template>
+      </div>
+    </section>
 
-    <script src="./app.js"></script>
-  </body>
+    <!-- TAB: Meta Ads Analysis -->
+    <section id="tab-meta-analysis" class="tab-content">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Meta Ads Asset Analysis</h2>
+          <div class="panel-actions">
+            <button class="btn btn-ghost export-btn" data-export="meta">Export CSV</button>
+          </div>
+        </div>
+        <div id="metaNoData" class="empty-state">
+          <p>No Meta Ads data uploaded yet. Upload CSV files to generate analysis.</p>
+        </div>
+        <div id="metaAnalysis" style="display:none;">
+          <!-- Asset Type Summary Cards -->
+          <div id="metaAssetTypeSummary" class="asset-type-cards"></div>
+          <!-- Benchmarks -->
+          <div id="metaBenchmarks" class="benchmarks-section"></div>
+          <!-- Main Table -->
+          <div class="table-scroll">
+            <table id="metaTable" class="analysis-table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Placement Analysis -->
+    <section id="tab-placement" class="tab-content">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Placement Analysis</h2>
+          <div class="panel-actions">
+            <button class="btn btn-ghost export-btn" data-export="placement">Export CSV</button>
+          </div>
+        </div>
+        <div id="placementNoData" class="empty-state">
+          <p>No data available for placement analysis. Upload CSV files first.</p>
+        </div>
+        <div id="placementAnalysis" style="display:none;">
+          <div id="placementGuardrailFlags" class="guardrail-flags"></div>
+          <div class="table-scroll">
+            <table id="placementTable" class="analysis-table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Week-over-Week -->
+    <section id="tab-wow" class="tab-content">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Week-over-Week Comparison</h2>
+          <div class="panel-actions">
+            <button class="btn btn-ghost export-btn" data-export="wow">Export CSV</button>
+          </div>
+        </div>
+        <div id="wowNoData" class="empty-state">
+          <p>Upload files for both Current Week and Previous Week to enable WoW comparison. Tag files in the upload section.</p>
+        </div>
+        <div id="wowAnalysis" style="display:none;">
+          <div id="wowFlags" class="wow-flags"></div>
+          <div class="table-scroll">
+            <table id="wowTable" class="analysis-table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Summary & Export -->
+    <section id="tab-summary" class="tab-content">
+      <div class="content-grid">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Executive Summary</h2>
+            <div class="panel-actions">
+              <button class="btn btn-ghost export-btn" data-export="all">Export All (Excel)</button>
+            </div>
+          </div>
+          <div id="execSummary" class="exec-summary">
+            <p class="empty-state">Generate analysis first to see the executive summary.</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Asset Type Summary</h2>
+          </div>
+          <div id="assetTypeSummaryAll" class="asset-type-summary-section">
+            <p class="empty-state">No data available yet.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Action Plan Overview</h2>
+        </div>
+        <div id="actionPlanOverview" class="action-overview">
+          <p class="empty-state">No data available yet.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Guardrail Campaign Template -->
+  <template id="guardrailCampaignTemplate">
+    <div class="guardrail-campaign-block">
+      <div class="guardrail-campaign-header">
+        <input type="text" class="guardrail-campaign-name" placeholder="Campaign name" />
+        <button class="btn btn-ghost btn-sm btn-danger remove-guardrail-btn">Remove</button>
+      </div>
+      <div class="guardrail-row">
+        <span>Google Search</span>
+        <input type="number" class="guardrail-input g-search" value="70" min="0" max="100" />
+        <span>%</span>
+      </div>
+      <div class="guardrail-row">
+        <span>GDN</span>
+        <input type="number" class="guardrail-input g-gdn" value="20" min="0" max="100" />
+        <span>%</span>
+      </div>
+      <div class="guardrail-row">
+        <span>YouTube</span>
+        <input type="number" class="guardrail-input g-youtube" value="15" min="0" max="100" />
+        <span>%</span>
+      </div>
+    </div>
+  </template>
+
+  <script src="./app.js"></script>
+</body>
 </html>
