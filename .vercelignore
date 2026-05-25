@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+.env
+.env.*
+sample_pipeline.db
+sample_data/
+src/
+tests/
+requirements.txt
+README.md

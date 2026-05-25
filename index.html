@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Google Ads Asset Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">Glints Performance Ops</p>
+          <h1>Google Ads Asset Dashboard</h1>
+          <p class="lede">
+            Upload Google Ads CSV exports and review campaign, ad group, app
+            asset performance, installs, click quality, and cost efficiency.
+          </p>
+        </div>
+
+        <section class="panel stack">
+          <div class="section-title">
+            <h2>Reference Time</h2>
+            <span class="badge">Report context</span>
+          </div>
+          <label class="field">
+            <span>Timezone label</span>
+            <input id="timezoneLabel" type="text" value="Asia/Jakarta" />
+          </label>
+          <label class="field">
+            <span>Reference datetime</span>
+            <input id="referenceDatetime" type="datetime-local" />
+          </label>
+          <div id="referenceSummary" class="muted small"></div>
+        </section>
+
+        <section class="panel stack">
+          <div class="section-title">
+            <h2>Analysis Rules</h2>
+            <span class="badge">Auto</span>
+          </div>
+          <p class="muted small">
+            The analysis highlights efficient assets, weak Cost / Install, high
+            spend with low installs, best click quality, and low CTR watchouts.
+          </p>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Google Ads</p>
+            <h2>Upload Google Ads CSV and review app asset performance.</h2>
+          </div>
+          <div class="hero-stats">
+            <div class="hero-stat">
+              <span id="datasetCount">0</span>
+              <small>datasets</small>
+            </div>
+            <div class="hero-stat">
+              <span id="rowCount">0</span>
+              <small>rows</small>
+            </div>
+            <div class="hero-stat">
+              <span id="campaignCount">0</span>
+              <small>assets</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="tabs">
+          <button class="tab active" data-tab="upload">Upload</button>
+          <button class="tab" data-tab="campaigns">Asset Performance</button>
+        </section>
+
+        <section id="upload" class="tab-panel active">
+          <div class="panel stack">
+            <div class="section-title">
+              <h2>Upload Google Ads File</h2>
+              <div class="inline-actions">
+                <button id="loadSampleBtn" class="ghost-button">Load sample data</button>
+                <button id="clearAllBtn" class="ghost-button">Clear all data</button>
+              </div>
+            </div>
+            <p class="muted">
+              Add one or more Google Ads CSV exports. After upload, map columns
+              so the app knows which metrics to use.
+            </p>
+            <div class="uploader-grid">
+              <label class="upload-card">
+                <span>Google Ads CSV</span>
+                <input data-source="google_ads" class="file-input" type="file" accept=".csv" />
+              </label>
+            </div>
+          </div>
+
+          <div id="datasetOverview" class="panel stack"></div>
+          <div id="datasetContainer" class="stack"></div>
+        </section>
+
+        <section id="campaigns" class="tab-panel">
+          <div class="panel stack">
+            <div class="section-title">
+              <h2>Executive Summary</h2>
+              <span class="badge">Auto analysis</span>
+            </div>
+            <div id="analysisSummary" class="analysis-grid"></div>
+          </div>
+
+          <div class="panel stack">
+            <div class="section-title">
+              <h2>Asset Scope</h2>
+              <span class="badge">Google Ads only</span>
+            </div>
+            <div class="toolbar">
+              <label class="field grow">
+                <span>Search</span>
+                <input id="campaignSearch" type="text" placeholder="Search campaign, ad group, or asset" />
+              </label>
+              <label class="field">
+                <span>Sort by</span>
+                <select id="sortBy">
+                  <option value="cost">Cost</option>
+                  <option value="count">Count</option>
+                  <option value="impressions">Impr.</option>
+                  <option value="clicks">Clicks</option>
+                  <option value="ctr">CTR</option>
+                  <option value="clickToInstall">Clicks &gt; Install</option>
+                  <option value="installs">Installs</option>
+                  <option value="costPerInstall">Cost / Install</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="panel metric-card">
+              <small>Cost</small>
+              <strong id="totalSpendCard">$0.00</strong>
+            </div>
+            <div class="panel metric-card">
+              <small>Installs</small>
+              <strong id="totalInstallsCard">0</strong>
+            </div>
+            <div class="panel metric-card">
+              <small>Cost / Install</small>
+              <strong id="avgCpiCard">$0.00</strong>
+            </div>
+            <div class="panel metric-card">
+              <small>Clicks</small>
+              <strong id="flaggedCountCard">0</strong>
+            </div>
+          </div>
+
+          <div class="panel stack">
+            <div class="section-title">
+              <h2>Asset Performance</h2>
+              <span class="badge">By app asset</span>
+            </div>
+            <div class="table-wrap">
+              <table id="campaignTable">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <template id="datasetTemplate">
+      <section class="panel dataset-card stack">
+        <div class="section-title">
+          <div class="stack compact">
+            <h2 class="dataset-title"></h2>
+            <div class="dataset-badges"></div>
+          </div>
+          <div class="inline-actions">
+            <button class="ghost-button preview-toggle-btn" type="button">Show preview</button>
+            <button class="ghost-button remove-dataset-btn" type="button">Remove</button>
+          </div>
+        </div>
+        <div class="dataset-meta muted small"></div>
+        <div class="mapped-summary muted small"></div>
+        <div class="mapping-grid"></div>
+        <div class="preview-wrap hidden">
+          <div class="table-wrap">
+            <table class="preview-table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
