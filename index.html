@@ -51,7 +51,7 @@
               <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
             </div>
             <p class="upload-text">Drag & drop CSV files here or click to browse</p>
-            <p class="upload-hint">Supports multiple files. Auto-detects Google Ads vs Meta Ads.</p>
+            <p class="upload-hint">Supports comma or tab-delimited CSV exports.</p>
             <input type="file" id="fileInput" accept=".csv" multiple hidden />
           </div>
         </div>
@@ -78,6 +78,41 @@
               </div>
             </div>
             <div id="googleGuardrails" class="guardrail-campaigns"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Action Metric Guardrails</h2>
+          </div>
+          <p class="panel-desc">Optional minimum CTR and Click&gt;Install thresholds for STAY / CHANGE / PAUSE decisions. Leave 0 to use median benchmarks.</p>
+          <div class="action-guardrail-grid">
+            <div class="guardrail-defaults">
+              <h4>Google Ads</h4>
+              <div class="guardrail-row">
+                <span>CTR</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="google.ctr" value="0" min="0" step="0.01" />
+                <span>%</span>
+              </div>
+              <div class="guardrail-row">
+                <span>Click&gt;Install</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="google.clickToInstall" value="0" min="0" step="0.01" />
+                <span>%</span>
+              </div>
+            </div>
+            <div class="guardrail-defaults">
+              <h4>Meta Ads</h4>
+              <div class="guardrail-row">
+                <span>CTR</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="meta.ctr" value="0" min="0" step="0.01" />
+                <span>%</span>
+              </div>
+              <div class="guardrail-row">
+                <span>Click&gt;Install</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="meta.clickToInstall" value="0" min="0" step="0.01" />
+                <span>%</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -112,6 +147,7 @@
         <div class="panel-header">
           <h2>Google Ads Asset Analysis</h2>
           <div class="panel-actions">
+            <label class="toggle-filter"><input type="checkbox" data-hide-metrics="google" /> Hide Metrics</label>
             <button class="btn btn-ghost export-btn" data-export="google">Export CSV</button>
           </div>
         </div>
@@ -119,6 +155,9 @@
           <p>No Google Ads data uploaded yet. Upload CSV files to generate analysis.</p>
         </div>
         <div id="googleAnalysis" style="display:none;">
+          <div id="googleMetricFilters" class="metric-filter-summary"></div>
+          <div id="googleCampaignSummary" class="asset-type-cards"></div>
+          <div id="googleAdGroupAssetTypeSummary" class="asset-type-cards"></div>
           <!-- Asset Type Summary Cards -->
           <div id="googleAssetTypeSummary" class="asset-type-cards"></div>
           <!-- Benchmarks -->
@@ -140,6 +179,7 @@
         <div class="panel-header">
           <h2>Meta Ads Asset Analysis</h2>
           <div class="panel-actions">
+            <label class="toggle-filter"><input type="checkbox" data-hide-metrics="meta" /> Hide Metrics</label>
             <button class="btn btn-ghost export-btn" data-export="meta">Export CSV</button>
           </div>
         </div>
@@ -147,6 +187,9 @@
           <p>No Meta Ads data uploaded yet. Upload CSV files to generate analysis.</p>
         </div>
         <div id="metaAnalysis" style="display:none;">
+          <div id="metaMetricFilters" class="metric-filter-summary"></div>
+          <div id="metaCampaignSummary" class="asset-type-cards"></div>
+          <div id="metaAdGroupAssetTypeSummary" class="asset-type-cards"></div>
           <!-- Asset Type Summary Cards -->
           <div id="metaAssetTypeSummary" class="asset-type-cards"></div>
           <!-- Benchmarks -->
@@ -168,6 +211,7 @@
         <div class="panel-header">
           <h2>Placement Analysis</h2>
           <div class="panel-actions">
+            <label class="toggle-filter"><input type="checkbox" data-hide-metrics="placement" /> Hide Metrics</label>
             <button class="btn btn-ghost export-btn" data-export="placement">Export CSV</button>
           </div>
         </div>
@@ -175,6 +219,7 @@
           <p>No data available for placement analysis. Upload CSV files first.</p>
         </div>
         <div id="placementAnalysis" style="display:none;">
+          <div id="placementProportions" class="placement-proportions"></div>
           <div id="placementGuardrailFlags" class="guardrail-flags"></div>
           <div class="table-scroll">
             <table id="placementTable" class="analysis-table">
@@ -199,6 +244,30 @@
           <p>Upload files for both Current Week and Previous Week to enable WoW comparison. Tag files in the upload section.</p>
         </div>
         <div id="wowAnalysis" style="display:none;">
+          <div class="wow-rule-panel">
+            <div class="wow-rule-grid">
+              <label class="wow-rule-field">
+                <span>CTR drop</span>
+                <input type="number" class="guardrail-input" data-wow-rule="ctrDrop" value="20" min="0" step="1" />
+                <span>%</span>
+              </label>
+              <label class="wow-rule-field">
+                <span>Click&gt;Install drop</span>
+                <input type="number" class="guardrail-input" data-wow-rule="c2iDrop" value="20" min="0" step="1" />
+                <span>%</span>
+              </label>
+              <label class="wow-rule-field">
+                <span>CPI increase</span>
+                <input type="number" class="guardrail-input" data-wow-rule="cpiIncrease" value="20" min="0" step="1" />
+                <span>%</span>
+              </label>
+            </div>
+            <div class="wow-rule-toggles">
+              <label class="toggle-filter"><input type="checkbox" data-wow-rule="costUpInstallsDown" checked /> Cost up + installs down</label>
+              <label class="toggle-filter"><input type="checkbox" data-wow-rule="stoppedInstalls" checked /> Stopped installs</label>
+              <label class="toggle-filter"><input type="checkbox" data-wow-rule="newInstalls" checked /> New installs</label>
+            </div>
+          </div>
           <div id="wowFlags" class="wow-flags"></div>
           <div class="table-scroll">
             <table id="wowTable" class="analysis-table">
@@ -212,26 +281,24 @@
 
     <!-- TAB: Summary & Export -->
     <section id="tab-summary" class="tab-content">
-      <div class="content-grid">
-        <div class="panel">
-          <div class="panel-header">
-            <h2>Executive Summary</h2>
-            <div class="panel-actions">
-              <button class="btn btn-ghost export-btn" data-export="all">Export All (Excel)</button>
-            </div>
-          </div>
-          <div id="execSummary" class="exec-summary">
-            <p class="empty-state">Generate analysis first to see the executive summary.</p>
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Executive Summary</h2>
+          <div class="panel-actions">
+            <button class="btn btn-ghost export-btn" data-export="all">Export All (Excel)</button>
           </div>
         </div>
+        <div id="execSummary" class="exec-summary">
+          <p class="empty-state">Generate analysis first to see the executive summary.</p>
+        </div>
+      </div>
 
-        <div class="panel">
-          <div class="panel-header">
-            <h2>Asset Type Summary</h2>
-          </div>
-          <div id="assetTypeSummaryAll" class="asset-type-summary-section">
-            <p class="empty-state">No data available yet.</p>
-          </div>
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Asset Type Summary</h2>
+        </div>
+        <div id="assetTypeSummaryAll" class="asset-type-summary-section">
+          <p class="empty-state">No data available yet.</p>
         </div>
       </div>
 
