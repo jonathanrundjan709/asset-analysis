@@ -28,10 +28,17 @@
       <button class="nav-tab active" data-tab="upload">Upload & Configure</button>
       <button class="nav-tab" data-tab="google-analysis">Google Ads Analysis</button>
       <button class="nav-tab" data-tab="meta-analysis">Meta Ads Analysis</button>
-      <button class="nav-tab" data-tab="placement">Placement Analysis</button>
-      <button class="nav-tab" data-tab="wow">Week-over-Week</button>
-      <button class="nav-tab" data-tab="summary">Summary & Export</button>
     </nav>
+
+    <section class="panel summary-top-panel">
+      <div class="panel-header">
+        <h2>Summary</h2>
+      </div>
+      <div id="execSummary" class="exec-summary"></div>
+      <div id="assetTypeSummaryAll" class="asset-type-summary-section">
+        <p class="empty-state">No data available yet.</p>
+      </div>
+    </section>
 
     <!-- TAB: Upload & Configure -->
     <section id="tab-upload" class="tab-content active">
@@ -56,62 +63,59 @@
           </div>
         </div>
 
-        <!-- Guardrail Configuration -->
-        <div class="panel">
-          <div class="panel-header">
-            <h2>Placement Guardrails</h2>
-            <button id="btnAddGuardrail" class="btn btn-ghost">+ Add Campaign</button>
-          </div>
-          <p class="panel-desc">Set max cost proportion per placement for each campaign. Underspending means the actual proportion is below 50% of the configured max.</p>
-          <div id="guardrailConfig" class="guardrail-config">
-            <div class="guardrail-defaults">
-              <h4>Meta Ads (Default)</h4>
-              <div class="guardrail-row">
-                <span>Instagram</span>
-                <input type="number" class="guardrail-input" id="metaIgGuardrail" value="59" min="0" max="100" />
-                <span>%</span>
-              </div>
-              <div class="guardrail-row">
-                <span>Facebook</span>
-                <input type="number" class="guardrail-input" id="metaFbGuardrail" value="49" min="0" max="100" />
-                <span>%</span>
-              </div>
-            </div>
-            <div id="googleGuardrails" class="guardrail-campaigns"></div>
-          </div>
-        </div>
-
         <div class="panel">
           <div class="panel-header">
             <h2>Action Metric Guardrails</h2>
           </div>
-          <p class="panel-desc">Optional minimum CTR and Click&gt;Install thresholds for STAY / CHANGE / PAUSE decisions. Leave 0 to use median benchmarks.</p>
+          <p class="panel-desc">Optional minimum CTR and Click&gt;Install thresholds for Keep / Change decisions. Leave 0 to use median benchmarks.</p>
           <div class="action-guardrail-grid">
             <div class="guardrail-defaults">
               <h4>Google Ads</h4>
-              <div class="guardrail-row">
-                <span>CTR</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="google.ctr" value="0" min="0" step="0.01" />
-                <span>%</span>
-              </div>
-              <div class="guardrail-row">
-                <span>Click&gt;Install</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="google.clickToInstall" value="0" min="0" step="0.01" />
-                <span>%</span>
-              </div>
+              <div class="action-guardrail-subhead"><span>Group</span><span>CTR %</span><span>Click&gt;Install %</span></div>
+              <label class="action-guardrail-row">
+                <span>Headline</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="google.Headline.ctr" value="0" min="0" step="0.01" />
+                <input type="number" class="guardrail-input" data-action-guardrail="google.Headline.clickToInstall" value="0" min="0" step="0.01" />
+              </label>
+              <label class="action-guardrail-row">
+                <span>Description</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="google.Description.ctr" value="0" min="0" step="0.01" />
+                <input type="number" class="guardrail-input" data-action-guardrail="google.Description.clickToInstall" value="0" min="0" step="0.01" />
+              </label>
+              <label class="action-guardrail-row">
+                <span>Horizontal Image</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="google.Horizontal Image.ctr" value="0" min="0" step="0.01" />
+                <input type="number" class="guardrail-input" data-action-guardrail="google.Horizontal Image.clickToInstall" value="0" min="0" step="0.01" />
+              </label>
+              <label class="action-guardrail-row">
+                <span>Youtube Video</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="google.Youtube Video.ctr" value="0" min="0" step="0.01" />
+                <input type="number" class="guardrail-input" data-action-guardrail="google.Youtube Video.clickToInstall" value="0" min="0" step="0.01" />
+              </label>
+              <label class="action-guardrail-row">
+                <span>HTML5</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="google.HTML5.ctr" value="0" min="0" step="0.01" />
+                <input type="number" class="guardrail-input" data-action-guardrail="google.HTML5.clickToInstall" value="0" min="0" step="0.01" />
+              </label>
             </div>
             <div class="guardrail-defaults">
               <h4>Meta Ads</h4>
-              <div class="guardrail-row">
-                <span>CTR</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="meta.ctr" value="0" min="0" step="0.01" />
-                <span>%</span>
-              </div>
-              <div class="guardrail-row">
-                <span>Click&gt;Install</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="meta.clickToInstall" value="0" min="0" step="0.01" />
-                <span>%</span>
-              </div>
+              <div class="action-guardrail-subhead"><span>Group</span><span>CTR %</span><span>Click&gt;Install %</span></div>
+              <label class="action-guardrail-row">
+                <span>KOL</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="meta.KOL.ctr" value="0" min="0" step="0.01" />
+                <input type="number" class="guardrail-input" data-action-guardrail="meta.KOL.clickToInstall" value="0" min="0" step="0.01" />
+              </label>
+              <label class="action-guardrail-row">
+                <span>Job Listing</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="meta.Job Listing.ctr" value="0" min="0" step="0.01" />
+                <input type="number" class="guardrail-input" data-action-guardrail="meta.Job Listing.clickToInstall" value="0" min="0" step="0.01" />
+              </label>
+              <label class="action-guardrail-row">
+                <span>Social Media</span>
+                <input type="number" class="guardrail-input" data-action-guardrail="meta.Social Media.ctr" value="0" min="0" step="0.01" />
+                <input type="number" class="guardrail-input" data-action-guardrail="meta.Social Media.clickToInstall" value="0" min="0" step="0.01" />
+              </label>
             </div>
           </div>
         </div>
@@ -148,7 +152,7 @@
           <h2>Google Ads Asset Analysis</h2>
           <div class="panel-actions">
             <label class="toggle-filter"><input type="checkbox" data-hide-metrics="google" /> Hide Metrics</label>
-            <button class="btn btn-ghost export-btn" data-export="google">Export CSV</button>
+            <button class="btn btn-ghost export-btn" data-export="google">Export to Google Sheets</button>
           </div>
         </div>
         <div id="googleNoData" class="empty-state">
@@ -156,13 +160,50 @@
         </div>
         <div id="googleAnalysis" style="display:none;">
           <div id="googleMetricFilters" class="metric-filter-summary"></div>
-          <div id="googleCampaignSummary" class="asset-type-cards"></div>
-          <div id="googleAdGroupAssetTypeSummary" class="asset-type-cards"></div>
-          <!-- Asset Type Summary Cards -->
-          <div id="googleAssetTypeSummary" class="asset-type-cards"></div>
-          <!-- Benchmarks -->
-          <div id="googleBenchmarks" class="benchmarks-section"></div>
+          <div class="subsection-header">
+            <h3>Placement Analysis</h3>
+            <div class="panel-actions">
+              <label class="toggle-filter"><input type="checkbox" data-hide-metrics="placement" /> Hide Metrics</label>
+              <button class="btn btn-ghost export-btn" data-export="placement">Export to Google Sheets</button>
+            </div>
+          </div>
+          <div id="placementNoData" class="empty-state">
+            <p>No Google Ads placement data uploaded yet.</p>
+          </div>
+          <div id="placementAnalysis" style="display:none;">
+            <div class="table-toolbar">
+              <label>Sort by
+                <select class="table-sort-select" data-sort-table="placement">
+                  <option value="cost">Cost</option>
+                  <option value="installs">Install</option>
+                  <option value="ctr">CTR</option>
+                  <option value="costPerInstall">CPI</option>
+                  <option value="clickToInstall">Click to Install</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table id="placementTable" class="analysis-table">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
           <!-- Main Table -->
+          <div class="subsection-header">
+            <h3>Asset Analysis</h3>
+          </div>
+          <div class="table-toolbar">
+            <label>Sort by
+              <select class="table-sort-select" data-sort-table="google">
+                <option value="installs">Install</option>
+                <option value="cost">Cost</option>
+                <option value="ctr">CTR</option>
+                <option value="costPerInstall">CPI</option>
+                <option value="clickToInstall">Click to Install</option>
+              </select>
+            </label>
+          </div>
           <div class="table-scroll">
             <table id="googleTable" class="analysis-table">
               <thead></thead>
@@ -180,7 +221,7 @@
           <h2>Meta Ads Asset Analysis</h2>
           <div class="panel-actions">
             <label class="toggle-filter"><input type="checkbox" data-hide-metrics="meta" /> Hide Metrics</label>
-            <button class="btn btn-ghost export-btn" data-export="meta">Export CSV</button>
+            <button class="btn btn-ghost export-btn" data-export="meta">Export to Google Sheets</button>
           </div>
         </div>
         <div id="metaNoData" class="empty-state">
@@ -188,13 +229,18 @@
         </div>
         <div id="metaAnalysis" style="display:none;">
           <div id="metaMetricFilters" class="metric-filter-summary"></div>
-          <div id="metaCampaignSummary" class="asset-type-cards"></div>
-          <div id="metaAdGroupAssetTypeSummary" class="asset-type-cards"></div>
-          <!-- Asset Type Summary Cards -->
-          <div id="metaAssetTypeSummary" class="asset-type-cards"></div>
-          <!-- Benchmarks -->
-          <div id="metaBenchmarks" class="benchmarks-section"></div>
           <!-- Main Table -->
+          <div class="table-toolbar">
+            <label>Sort by
+              <select class="table-sort-select" data-sort-table="meta">
+                <option value="installs">Install</option>
+                <option value="cost">Cost</option>
+                <option value="ctr">CTR</option>
+                <option value="costPerInstall">CPI</option>
+                <option value="clickToInstall">Click to Install</option>
+              </select>
+            </label>
+          </div>
           <div class="table-scroll">
             <table id="metaTable" class="analysis-table">
               <thead></thead>
@@ -205,138 +251,7 @@
       </div>
     </section>
 
-    <!-- TAB: Placement Analysis -->
-    <section id="tab-placement" class="tab-content">
-      <div class="panel">
-        <div class="panel-header">
-          <h2>Placement Analysis</h2>
-          <div class="panel-actions">
-            <label class="toggle-filter"><input type="checkbox" data-hide-metrics="placement" /> Hide Metrics</label>
-            <button class="btn btn-ghost export-btn" data-export="placement">Export CSV</button>
-          </div>
-        </div>
-        <div id="placementNoData" class="empty-state">
-          <p>No data available for placement analysis. Upload CSV files first.</p>
-        </div>
-        <div id="placementAnalysis" style="display:none;">
-          <div id="placementProportions" class="placement-proportions"></div>
-          <div id="placementGuardrailFlags" class="guardrail-flags"></div>
-          <div class="table-scroll">
-            <table id="placementTable" class="analysis-table">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- TAB: Week-over-Week -->
-    <section id="tab-wow" class="tab-content">
-      <div class="panel">
-        <div class="panel-header">
-          <h2>Week-over-Week Comparison</h2>
-          <div class="panel-actions">
-            <button class="btn btn-ghost export-btn" data-export="wow">Export CSV</button>
-          </div>
-        </div>
-        <div id="wowNoData" class="empty-state">
-          <p>Upload files for both Current Week and Previous Week to enable WoW comparison. Tag files in the upload section.</p>
-        </div>
-        <div id="wowAnalysis" style="display:none;">
-          <div class="wow-rule-panel">
-            <div class="wow-rule-grid">
-              <label class="wow-rule-field">
-                <span>CTR drop</span>
-                <input type="number" class="guardrail-input" data-wow-rule="ctrDrop" value="20" min="0" step="1" />
-                <span>%</span>
-              </label>
-              <label class="wow-rule-field">
-                <span>Click&gt;Install drop</span>
-                <input type="number" class="guardrail-input" data-wow-rule="c2iDrop" value="20" min="0" step="1" />
-                <span>%</span>
-              </label>
-              <label class="wow-rule-field">
-                <span>CPI increase</span>
-                <input type="number" class="guardrail-input" data-wow-rule="cpiIncrease" value="20" min="0" step="1" />
-                <span>%</span>
-              </label>
-            </div>
-            <div class="wow-rule-toggles">
-              <label class="toggle-filter"><input type="checkbox" data-wow-rule="costUpInstallsDown" checked /> Cost up + installs down</label>
-              <label class="toggle-filter"><input type="checkbox" data-wow-rule="stoppedInstalls" checked /> Stopped installs</label>
-              <label class="toggle-filter"><input type="checkbox" data-wow-rule="newInstalls" checked /> New installs</label>
-            </div>
-          </div>
-          <div id="wowFlags" class="wow-flags"></div>
-          <div class="table-scroll">
-            <table id="wowTable" class="analysis-table">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- TAB: Summary & Export -->
-    <section id="tab-summary" class="tab-content">
-      <div class="panel">
-        <div class="panel-header">
-          <h2>Executive Summary</h2>
-          <div class="panel-actions">
-            <button class="btn btn-ghost export-btn" data-export="all">Export All (Excel)</button>
-          </div>
-        </div>
-        <div id="execSummary" class="exec-summary">
-          <p class="empty-state">Generate analysis first to see the executive summary.</p>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-header">
-          <h2>Asset Type Summary</h2>
-        </div>
-        <div id="assetTypeSummaryAll" class="asset-type-summary-section">
-          <p class="empty-state">No data available yet.</p>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-header">
-          <h2>Action Plan Overview</h2>
-        </div>
-        <div id="actionPlanOverview" class="action-overview">
-          <p class="empty-state">No data available yet.</p>
-        </div>
-      </div>
-    </section>
   </div>
-
-  <!-- Guardrail Campaign Template -->
-  <template id="guardrailCampaignTemplate">
-    <div class="guardrail-campaign-block">
-      <div class="guardrail-campaign-header">
-        <input type="text" class="guardrail-campaign-name" placeholder="Campaign name" />
-        <button class="btn btn-ghost btn-sm btn-danger remove-guardrail-btn">Remove</button>
-      </div>
-      <div class="guardrail-row">
-        <span>Google Search</span>
-        <input type="number" class="guardrail-input g-search" value="70" min="0" max="100" />
-        <span>%</span>
-      </div>
-      <div class="guardrail-row">
-        <span>GDN</span>
-        <input type="number" class="guardrail-input g-gdn" value="20" min="0" max="100" />
-        <span>%</span>
-      </div>
-      <div class="guardrail-row">
-        <span>YouTube</span>
-        <input type="number" class="guardrail-input g-youtube" value="15" min="0" max="100" />
-        <span>%</span>
-      </div>
-    </div>
-  </template>
 
   <script src="./app.js"></script>
 </body>

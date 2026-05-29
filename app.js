@@ -13,36 +13,25 @@ const APP = {
   googleRows: [],     // normalized + aggregated Google Ads rows
   metaRows: [],       // normalized + aggregated Meta Ads rows
   inactiveRows: [],   // rows excluded from main analysis because no meaningful activity
-  guardrails: {
-    meta: { Instagram: 59, Facebook: 49 },
-    google: []        // [{ id, campaign, search, gdn, youtube }]
-  },
-  actionMetricGuardrails: {
-    google: { ctr: 0, clickToInstall: 0 },
-    meta: { ctr: 0, clickToInstall: 0 }
-  },
+  actionMetricGuardrails: createDefaultActionMetricGuardrails(),
   metricFilters: {
     google: {},
     meta: {}
+  },
+  tableSort: {
+    google: "installs",
+    meta: "installs",
+    placement: "cost"
   },
   assetTypeOverrides: {},
   hideMetrics: {
     google: false,
     meta: false,
     placement: false
-  },
-  wowFlagRules: {
-    ctrDrop: 0.2,
-    c2iDrop: 0.2,
-    cpiIncrease: 0.2,
-    costUpInstallsDown: true,
-    stoppedInstalls: true,
-    newInstalls: true
   }
 };
 
 const NO_METRIC_VALUES_SELECTED = "__no_metric_values_selected__";
-const UNDERSPEND_LIMIT_RATIO = 0.5;
 const ASSET_TYPE_OVERRIDE_STORAGE_KEY = "assetTypeOverrides.v1";
 const ASSET_TYPE_OPTIONS = [
   "Social Media",
@@ -50,6 +39,27 @@ const ASSET_TYPE_OPTIONS = [
   "Job Listing"
 ];
 const CONTENT_TYPE_OPTIONS = ASSET_TYPE_OPTIONS;
+const SUMMARY_GUARDRAIL_GROUPS = {
+  google: ["Headline", "Description", "Horizontal Image", "Youtube Video", "HTML5"],
+  meta: ["KOL", "Job Listing", "Social Media"]
+};
+
+function createDefaultActionMetricGuardrails() {
+  return {
+    google: {
+      Headline: { ctr: 0, clickToInstall: 0 },
+      Description: { ctr: 0, clickToInstall: 0 },
+      "Horizontal Image": { ctr: 0, clickToInstall: 0 },
+      "Youtube Video": { ctr: 0, clickToInstall: 0 },
+      HTML5: { ctr: 0, clickToInstall: 0 }
+    },
+    meta: {
+      KOL: { ctr: 0, clickToInstall: 0 },
+      "Job Listing": { ctr: 0, clickToInstall: 0 },
+      "Social Media": { ctr: 0, clickToInstall: 0 }
+    }
+  };
+}
 
 // ============================================
 // INIT
@@ -58,10 +68,9 @@ document.addEventListener("DOMContentLoaded", () => {
   loadAssetTypeOverrides();
   wireNavTabs();
   wireUpload();
-  wireGuardrails();
   wireActionMetricGuardrails();
-  wireWoWFlagRules();
   wireHideMetrics();
+  wireSortControls();
   wireExport();
 });
 
@@ -98,21 +107,14 @@ function wireNavTabs() {
 function wireActionMetricGuardrails() {
   document.querySelectorAll("[data-action-guardrail]").forEach(input => {
     input.addEventListener("change", e => {
-      const [platform, metric] = e.target.dataset.actionGuardrail.split(".");
-      if (!APP.actionMetricGuardrails[platform]) APP.actionMetricGuardrails[platform] = {};
-      APP.actionMetricGuardrails[platform][metric] = (Number(e.target.value) || 0) / 100;
-      runAnalysis();
-    });
-  });
-}
+      const parts = e.target.dataset.actionGuardrail.split(".");
+      const platform = parts[0];
+      const metric = parts[parts.length - 1];
+      const group = parts.slice(1, -1).join(".");
 
-function wireWoWFlagRules() {
-  document.querySelectorAll("[data-wow-rule]").forEach(input => {
-    input.addEventListener("change", e => {
-      const key = e.target.dataset.wowRule;
-      APP.wowFlagRules[key] = input.type === "checkbox"
-        ? input.checked
-        : (Number(input.value) || 0) / 100;
+      if (!APP.actionMetricGuardrails[platform]) APP.actionMetricGuardrails[platform] = {};
+      if (!APP.actionMetricGuardrails[platform][group]) APP.actionMetricGuardrails[platform][group] = { ctr: 0, clickToInstall: 0 };
+      APP.actionMetricGuardrails[platform][group][metric] = (Number(e.target.value) || 0) / 100;
       runAnalysis();
     });
   });
@@ -122,6 +124,17 @@ function wireHideMetrics() {
   document.querySelectorAll("[data-hide-metrics]").forEach(input => {
     input.addEventListener("change", e => {
       APP.hideMetrics[e.target.dataset.hideMetrics] = e.target.checked;
+      renderAllTabs();
+    });
+  });
+}
+
+function wireSortControls() {
+  document.querySelectorAll("[data-sort-table]").forEach(select => {
+    const tableKey = select.dataset.sortTable;
+    if (APP.tableSort[tableKey]) select.value = APP.tableSort[tableKey];
+    select.addEventListener("change", e => {
+      APP.tableSort[e.target.dataset.sortTable] = e.target.value;
       renderAllTabs();
     });
   });
@@ -155,28 +168,6 @@ function wireUpload() {
 
   if (btnSample) btnSample.addEventListener("click", loadSampleData);
   if (btnClear) btnClear.addEventListener("click", clearAll);
-}
-
-function wireGuardrails() {
-  const btnAdd = document.getElementById("btnAddGuardrail");
-  const ig = document.getElementById("metaIgGuardrail");
-  const fb = document.getElementById("metaFbGuardrail");
-
-  if (btnAdd) btnAdd.addEventListener("click", addGuardrailCampaign);
-
-  if (ig) {
-    ig.addEventListener("change", e => {
-      APP.guardrails.meta.Instagram = Number(e.target.value) || 0;
-      runAnalysis();
-    });
-  }
-
-  if (fb) {
-    fb.addEventListener("change", e => {
-      APP.guardrails.meta.Facebook = Number(e.target.value) || 0;
-      runAnalysis();
-    });
-  }
 }
 
 function wireExport() {
@@ -280,7 +271,7 @@ async function handleFiles(fileList) {
       id: crypto.randomUUID(),
       name: file.name,
       platform,
-      week: "auto",
+      week: "current",
       rawText,
       headers: parsed.headers,
       rows: parsed.rows,
@@ -316,29 +307,17 @@ function clearAll() {
   APP.googleBenchmarks = {};
   APP.metaBenchmarks = {};
   APP.placementGoogle = [];
-  APP.placementMeta = [];
-  APP.wowResults = [];
   APP.metricFilters = { google: {}, meta: {} };
+  APP.tableSort = { google: "installs", meta: "installs", placement: "cost" };
   APP.assetTypeOverrides = {};
   localStorage.removeItem(ASSET_TYPE_OVERRIDE_STORAGE_KEY);
   APP.hideMetrics = { google: false, meta: false, placement: false };
-  APP.actionMetricGuardrails = {
-    google: { ctr: 0, clickToInstall: 0 },
-    meta: { ctr: 0, clickToInstall: 0 }
-  };
-  APP.wowFlagRules = {
-    ctrDrop: 0.2,
-    c2iDrop: 0.2,
-    cpiIncrease: 0.2,
-    costUpInstallsDown: true,
-    stoppedInstalls: true,
-    newInstalls: true
-  };
+  APP.actionMetricGuardrails = createDefaultActionMetricGuardrails();
   document.querySelectorAll("[data-hide-metrics]").forEach(input => { input.checked = false; });
   document.querySelectorAll("[data-action-guardrail]").forEach(input => { input.value = 0; });
-  document.querySelectorAll("[data-wow-rule]").forEach(input => {
-    if (input.type === "checkbox") input.checked = true;
-    else input.value = 20;
+  document.querySelectorAll("[data-sort-table]").forEach(select => {
+    const tableKey = select.dataset.sortTable;
+    select.value = APP.tableSort[tableKey] || select.value;
   });
 
   renderFilesList();
@@ -1142,39 +1121,8 @@ function inferFromFilename(name, type) {
 }
 
 function applyAutoWeekAssignment(rows) {
-  const periodMap = new Map();
-
   for (const row of rows) {
-    if (row.week !== "auto" || !row.period) continue;
-
-    const key = `${row.period.start}||${row.period.end}`;
-    if (!periodMap.has(key)) {
-      periodMap.set(key, {
-        key,
-        start: row.period.start,
-        end: row.period.end,
-        sortTime: row.period.sortTime || 0
-      });
-    }
-  }
-
-  const periods = [...periodMap.values()].sort((a, b) => b.sortTime - a.sortTime);
-  const weekByPeriod = new Map();
-
-  if (periods[0]) weekByPeriod.set(periods[0].key, "current");
-  if (periods[1]) weekByPeriod.set(periods[1].key, "previous");
-  for (const period of periods.slice(2)) weekByPeriod.set(period.key, "older");
-
-  for (const row of rows) {
-    if (row.week !== "auto") continue;
-
-    if (!row.period) {
-      row.week = "current";
-      continue;
-    }
-
-    const key = `${row.period.start}||${row.period.end}`;
-    row.week = weekByPeriod.get(key) || "current";
+    row.week = "current";
   }
 }
 
@@ -1325,21 +1273,17 @@ function assignActionPlan(row, benchmarks) {
   const bench = benchmarks[row.benchmarkKey || benchmarkKeyForRow(row)];
   if (!bench) return "N/A";
 
-  const actionGuardrail = APP.actionMetricGuardrails[row.platform] || {};
+  const actionGuardrail = actionMetricGuardrailForRow(row);
   const ctrTarget = actionGuardrail.ctr > 0 ? actionGuardrail.ctr : bench.medianCTR;
   const c2iTarget = actionGuardrail.clickToInstall > 0 ? actionGuardrail.clickToInstall : bench.medianClickToInstall;
 
-  // Definition: CHANGE means CTR clears the threshold but Click>Install does not.
-  // PAUSE / REPLACE means CTR is below threshold, regardless of downstream conversion.
   if (row.ctr !== null && ctrTarget > 0) {
     const ctrAbove = row.ctr >= ctrTarget;
     const c2iAbove = row.clickToInstall !== null && c2iTarget > 0
       ? row.clickToInstall >= c2iTarget
       : true;
 
-    if (ctrAbove && c2iAbove) return "STAY";
-    if (ctrAbove && !c2iAbove) return "CHANGE";
-    return "PAUSE";
+    return ctrAbove && c2iAbove ? "KEEP" : "CHANGE";
   }
 
   // Fallback when clicks/CTR unavailable.
@@ -1347,9 +1291,7 @@ function assignActionPlan(row, benchmarks) {
     const cpiBelow = row.costPerInstall <= bench.medianCPI;
     const installsAbove = row.installs >= bench.medianInstalls;
 
-    if (cpiBelow && installsAbove) return "STAY";
-    if (!cpiBelow && installsAbove) return "CHANGE";
-    return "PAUSE";
+    return cpiBelow && installsAbove ? "KEEP" : "CHANGE";
   }
 
   // Meta ranking fallback.
@@ -1360,14 +1302,19 @@ function assignActionPlan(row, benchmarks) {
   return "N/A";
 }
 
+function actionMetricGuardrailForRow(row) {
+  const platformGuardrails = APP.actionMetricGuardrails[row.platform] || {};
+  const group = summaryGuardrailGroup(row);
+  return platformGuardrails[group] || { ctr: 0, clickToInstall: 0 };
+}
+
 function assignActionFromRankings(row) {
   const quality = rankingScore(row.qualityRanking);
   const engagement = rankingScore(row.engagementRanking);
   const conversion = rankingScore(row.conversionRanking);
 
-  if (quality >= 2 && engagement >= 2 && conversion >= 2) return "STAY";
-  if (engagement >= 2 && conversion < 2) return "CHANGE";
-  if (engagement < 2 || quality < 2) return "PAUSE";
+  if (quality >= 2 && engagement >= 2 && conversion >= 2) return "KEEP";
+  if (engagement || quality || conversion) return "CHANGE";
 
   return "N/A";
 }
@@ -1387,8 +1334,10 @@ function rankingScore(val) {
 // ============================================
 function computePlacementAnalysis(groupedRows) {
   const byPlacement = new Map();
+  const placementOrder = ["Google Search", "YouTube", "GDN", "Search Partner"];
 
   for (const row of groupedRows) {
+    if (row.platform !== "google") continue;
     if (!hasMeaningfulActivity({
       cost: row.cost,
       impressions: row.impressions,
@@ -1398,16 +1347,12 @@ function computePlacementAnalysis(groupedRows) {
       continue;
     }
 
-    const key = `${row.platform}||${row.campaign}||${row.adGroup}||${row.assetType}||${row.contentType || ""}||${row.channel}`;
+    const placement = placementOrder.includes(row.channel) ? row.channel : row.channel || "Unknown";
 
-    if (!byPlacement.has(key)) {
-      byPlacement.set(key, {
+    if (!byPlacement.has(placement)) {
+      byPlacement.set(placement, {
         platform: row.platform,
-        campaign: row.campaign,
-        adGroup: row.adGroup,
-        assetType: row.assetType,
-        contentType: row.contentType || "Social Media",
-        placement: row.channel,
+        placement,
         cost: 0,
         impressions: 0,
         clicks: 0,
@@ -1416,7 +1361,7 @@ function computePlacementAnalysis(groupedRows) {
       });
     }
 
-    const p = byPlacement.get(key);
+    const p = byPlacement.get(placement);
 
     p.cost += row.cost;
     p.impressions += row.impressions;
@@ -1427,240 +1372,51 @@ function computePlacementAnalysis(groupedRows) {
     p.installs += row.installs;
   }
 
-  const campaignTotals = {};
-  const campaignPlacementTotals = {};
+  const rows = placementOrder.map(placement => byPlacement.get(placement) || {
+    platform: "google",
+    placement,
+    cost: 0,
+    impressions: 0,
+    clicks: 0,
+    installs: 0,
+    hasClicks: true
+  });
+  const activeRows = rows.filter(p => hasMeaningfulActivity({
+    cost: p.cost,
+    impressions: p.impressions,
+    clicks: p.clicks || 0,
+    installs: p.installs
+  }));
+  if (!activeRows.length) return [];
+  const totalCost = activeRows.reduce((sum, p) => sum + (p.cost || 0), 0);
+  const ctrBenchmark = median(activeRows.map(p => safeDivide(p.clicks, p.impressions)));
+  const clickToInstallBenchmark = median(activeRows.map(p => safeDivide(p.installs, p.clicks)));
 
-  for (const p of byPlacement.values()) {
-    const totalKey = `${p.platform}||${p.campaign}`;
-    if (!campaignTotals[totalKey]) campaignTotals[totalKey] = 0;
-    campaignTotals[totalKey] += p.cost;
-
-    const placementKey = `${p.platform}||${p.campaign}||${p.placement}`;
-    if (!campaignPlacementTotals[placementKey]) campaignPlacementTotals[placementKey] = 0;
-    campaignPlacementTotals[placementKey] += p.cost;
-  }
-
-  const results = [];
-
-  for (const p of byPlacement.values()) {
-    const totalKey = `${p.platform}||${p.campaign}`;
-    const placementKey = `${p.platform}||${p.campaign}||${p.placement}`;
-    const costShare = safeDivide(campaignPlacementTotals[placementKey], campaignTotals[totalKey]);
+  return rows.map(p => {
     const ctr = p.hasClicks ? safeDivide(p.clicks, p.impressions) : null;
     const clickToInstall = (p.hasClicks && p.clicks > 0) ? safeDivide(p.installs, p.clicks) : null;
     const costPerInstall = safeDivide(p.cost, p.installs);
-    const guardrailStatus = checkGuardrail(p.platform, p.campaign, p.placement, costShare);
 
-    results.push({
+    return {
       ...p,
       ctr,
       clickToInstall,
       costPerInstall,
-      costShare,
-      costProportion: costShare,
-      rowCostShare: safeDivide(p.cost, campaignTotals[totalKey]),
-      guardrailStatus,
-      actionPlan: guardrailStatus === "Above Guardrail" ? "PAUSE" : "STAY"
-    });
-  }
-
-  return results;
-}
-
-function checkGuardrail(platform, campaign, placement, costShare) {
-  const pct = costShare * 100;
-
-  if (platform === "meta") {
-    const limit = APP.guardrails.meta[placement];
-
-    if (limit && pct > limit) return "Above Guardrail";
-    if (limit && pct < limit * UNDERSPEND_LIMIT_RATIO) return "Underspending";
-    if (limit) return "Within Guardrail";
-
-    return "N/A";
-  }
-
-  if (platform === "google") {
-    const config = APP.guardrails.google.find(g =>
-      (g.campaign || "").toLowerCase().trim() === (campaign || "").toLowerCase().trim()
-    );
-
-    if (!config) return "N/A";
-
-    let limit = null;
-
-    if (placement === "Google Search") limit = config.search;
-    else if (placement === "GDN") limit = config.gdn;
-    else if (placement === "YouTube") limit = config.youtube;
-
-    if (limit && pct > limit) return "Above Guardrail";
-    if (limit && pct < limit * UNDERSPEND_LIMIT_RATIO) return "Underspending";
-    if (limit) return "Within Guardrail";
-
-    return "N/A";
-  }
-
-  return "N/A";
-}
-
-// ============================================
-// WEEK-OVER-WEEK ANALYSIS
-// ============================================
-function computeWoW(allGrouped) {
-  const current = aggregateRowsForWoW(allGrouped.filter(r => r.week === "current"));
-  const previous = aggregateRowsForWoW(allGrouped.filter(r => r.week === "previous"));
-
-  if (!current.length || !previous.length) return [];
-
-  const prevMap = new Map();
-
-  for (const r of previous) {
-    const key = wowCompareKey(r);
-    prevMap.set(key, r);
-  }
-
-  const results = [];
-
-  for (const curr of current) {
-    const key = wowCompareKey(curr);
-    const prev = prevMap.get(key);
-    if (!prev) continue;
-
-    const currActive = hasMeaningfulActivity({
-      cost: curr.cost,
-      impressions: curr.impressions,
-      clicks: curr.clicks || 0,
-      installs: curr.installs
-    });
-
-    const prevActive = hasMeaningfulActivity({
-      cost: prev.cost,
-      impressions: prev.impressions,
-      clicks: prev.clicks || 0,
-      installs: prev.installs
-    });
-
-    if (!currActive && !prevActive) continue;
-
-    const wowCost = prev.cost > 0 ? safeDivide(curr.cost - prev.cost, prev.cost) : null;
-    const wowImpr = prev.impressions > 0 ? safeDivide(curr.impressions - prev.impressions, prev.impressions) : null;
-    const wowClicks = (curr.hasClicks && prev.hasClicks && prev.clicks > 0)
-      ? safeDivide(curr.clicks - prev.clicks, prev.clicks)
-      : null;
-    const wowCTR = (curr.ctr !== null && prev.ctr !== null && prev.ctr > 0)
-      ? safeDivide(curr.ctr - prev.ctr, prev.ctr)
-      : null;
-    const wowC2I = (curr.clickToInstall !== null && prev.clickToInstall !== null && prev.clickToInstall > 0)
-      ? safeDivide(curr.clickToInstall - prev.clickToInstall, prev.clickToInstall)
-      : null;
-    const wowInstalls = prev.installs > 0
-      ? safeDivide(curr.installs - prev.installs, prev.installs)
-      : null;
-    const wowCPI = (curr.costPerInstall > 0 && prev.costPerInstall > 0)
-      ? safeDivide(curr.costPerInstall - prev.costPerInstall, prev.costPerInstall)
-      : null;
-
-    const flags = [];
-
-    const rules = APP.wowFlagRules || {};
-    const ctrDropLimit = Number(rules.ctrDrop ?? 0.2);
-    const c2iDropLimit = Number(rules.c2iDrop ?? 0.2);
-    const cpiIncreaseLimit = Number(rules.cpiIncrease ?? 0.2);
-
-    if (ctrDropLimit > 0 && wowCTR !== null && wowCTR < -ctrDropLimit) flags.push(`CTR drop >${fmtRulePct(ctrDropLimit)}`);
-    if (c2iDropLimit > 0 && wowC2I !== null && wowC2I < -c2iDropLimit) flags.push(`Click>Install% drop >${fmtRulePct(c2iDropLimit)}`);
-    if (cpiIncreaseLimit > 0 && wowCPI !== null && wowCPI > cpiIncreaseLimit) flags.push(`CPI increase >${fmtRulePct(cpiIncreaseLimit)}`);
-    if (rules.costUpInstallsDown !== false && wowCost !== null && wowCost > 0 && wowInstalls !== null && wowInstalls < 0) flags.push("Cost up, Installs down");
-    if (rules.stoppedInstalls !== false && curr.installs === 0 && prev.installs > 0) flags.push("Stopped / no installs this week");
-    if (rules.newInstalls !== false && curr.installs > 0 && prev.installs === 0) flags.push("New / reactivated installs");
-
-    results.push({
-      platform: curr.platform,
-      channel: curr.channel,
-      campaign: curr.campaign,
-      adGroup: curr.adGroup,
-      assetType: curr.assetType,
-      contentType: curr.contentType,
-      asset: curr.asset,
-      currCost: curr.cost,
-      prevCost: prev.cost,
-      wowCost,
-      currImpr: curr.impressions,
-      prevImpr: prev.impressions,
-      wowImpr,
-      currClicks: curr.clicks,
-      prevClicks: prev.clicks,
-      wowClicks,
-      currCTR: curr.ctr,
-      prevCTR: prev.ctr,
-      wowCTR,
-      currC2I: curr.clickToInstall,
-      prevC2I: prev.clickToInstall,
-      wowC2I,
-      currInstalls: curr.installs,
-      prevInstalls: prev.installs,
-      wowInstalls,
-      currCPI: curr.costPerInstall,
-      prevCPI: prev.costPerInstall,
-      wowCPI,
-      flags
-    });
-  }
-
-  return results;
-}
-
-function fmtRulePct(value) {
-  return `${Math.round(value * 100)}%`;
-}
-
-function aggregateRowsForWoW(rows) {
-  const grouped = new Map();
-
-  for (const row of rows) {
-    const key = wowCompareKey(row);
-
-    if (!grouped.has(key)) {
-      grouped.set(key, {
-        platform: row.platform,
-        channel: row.platform === "google" ? "All Google placements" : row.channel,
-        campaign: row.campaign,
-        adGroup: row.adGroup,
-        assetType: row.assetType,
-        contentType: row.contentType || "Social Media",
-        asset: row.asset,
-        cost: 0,
-        impressions: 0,
-        clicks: 0,
-        installs: 0,
-        count: 0,
-        hasClicks: row.hasClicks !== false,
-        week: row.week
-      });
-    }
-
-    const g = grouped.get(key);
-    g.cost += row.cost || 0;
-    g.impressions += row.impressions || 0;
-
-    if (row.clicks !== null) g.clicks += row.clicks || 0;
-    else g.hasClicks = false;
-
-    g.installs += row.installs || 0;
-    g.count += row.count || 1;
-  }
-
-  return [...grouped.values()].map(g => {
-    g.ctr = g.hasClicks ? safeDivide(g.clicks, g.impressions) : null;
-    g.clickToInstall = (g.hasClicks && g.clicks > 0) ? safeDivide(g.installs, g.clicks) : null;
-    g.costPerInstall = safeDivide(g.cost, g.installs);
-    return g;
+      costProportion: safeDivide(p.cost, totalCost),
+      benchmarkStatus: placementBenchmarkStatus({ ctr, clickToInstall }, { ctr: ctrBenchmark, clickToInstall: clickToInstallBenchmark }),
+      actionPlan: placementBenchmarkStatus({ ctr, clickToInstall }, { ctr: ctrBenchmark, clickToInstall: clickToInstallBenchmark }) === "Weak" ? "CHANGE" : "KEEP"
+    };
   });
 }
 
-function wowCompareKey(row) {
-  const placementPart = row.platform === "google" ? "" : row.channel;
-  return `${row.platform}||${placementPart}||${row.campaign}||${row.adGroup}||${row.assetType}||${row.contentType || ""}||${row.asset}`;
+function placementBenchmarkStatus(row, benchmark) {
+  const ctrRatio = benchmark.ctr > 0 && row.ctr !== null ? row.ctr / benchmark.ctr : 1;
+  const c2iRatio = benchmark.clickToInstall > 0 && row.clickToInstall !== null ? row.clickToInstall / benchmark.clickToInstall : 1;
+  const score = (ctrRatio + c2iRatio) / 2;
+
+  if (score >= 1.1) return "Strong";
+  if (score >= 0.8) return "Average";
+  return "Weak";
 }
 
 // ============================================
@@ -1686,9 +1442,9 @@ function runAnalysis() {
   const googlePlacementRows = groupAndAggregate(allGoogle, { collapseGooglePlacement: false });
   APP.metaRows = groupAndAggregate(allMeta);
 
-  const currentGoogle = APP.googleRows.filter(r => r.week === "current");
-  const currentGooglePlacementRows = googlePlacementRows.filter(r => r.week === "current");
-  const currentMeta = APP.metaRows.filter(r => r.week === "current");
+  const currentGoogle = APP.googleRows;
+  const currentGooglePlacementRows = googlePlacementRows;
+  const currentMeta = APP.metaRows;
 
   const googleBenchmarks = computeBenchmarks(currentGoogle);
   const metaBenchmarks = computeBenchmarks(currentMeta);
@@ -1705,10 +1461,6 @@ function runAnalysis() {
   APP.metaBenchmarks = metaBenchmarks;
 
   APP.placementGoogle = computePlacementAnalysis(currentGooglePlacementRows);
-  APP.placementMeta = computePlacementAnalysis(currentMeta);
-
-  const allGroupedForWoW = [...APP.googleRows, ...APP.metaRows];
-  APP.wowResults = computeWoW(allGroupedForWoW);
 
   renderAllTabs();
   updateStats();
@@ -1754,11 +1506,6 @@ function renderFilesList() {
         </div>
       </div>
       <div class="file-card-actions">
-        <select class="week-select" data-id="${esc(f.id)}" data-field="week">
-          <option value="auto" ${f.week === "auto" ? "selected" : ""}>Auto Week</option>
-          <option value="current" ${f.week === "current" ? "selected" : ""}>Current Week</option>
-          <option value="previous" ${f.week === "previous" ? "selected" : ""}>Previous Week</option>
-        </select>
         <select class="week-select" data-id="${esc(f.id)}" data-field="platform">
           <option value="google" ${f.platform === "google" ? "selected" : ""}>Google Ads</option>
           <option value="meta" ${f.platform === "meta" ? "selected" : ""}>Meta Ads</option>
@@ -1769,16 +1516,6 @@ function renderFilesList() {
       </div>
     </div>
   `).join("");
-
-  list.querySelectorAll("[data-field='week']").forEach(sel => {
-    sel.addEventListener("change", e => {
-      const file = APP.files.find(f => f.id === e.target.dataset.id);
-      if (file) {
-        file.week = e.target.value;
-        runAnalysis();
-      }
-    });
-  });
 
   list.querySelectorAll("[data-field='platform']").forEach(sel => {
     sel.addEventListener("change", e => {
@@ -1841,13 +1578,11 @@ function renderAllTabs() {
   renderGoogleAnalysis();
   renderMetaAnalysis();
   renderPlacementAnalysis();
-  renderWoWAnalysis();
   renderSummary();
 }
 
 function getCurrentActiveRows(rows) {
   return rows.filter(r =>
-    r.week === "current" &&
     hasMeaningfulActivity({
       cost: r.cost,
       impressions: r.impressions,
@@ -1875,17 +1610,6 @@ function renderGoogleAnalysis() {
   analysis.style.display = "";
 
   renderMetricFilterSummary("googleMetricFilters", "google", APP.googleBenchmarks);
-  const filteredRows = applyMetricFilters(rows, "google");
-  const hideMetrics = APP.hideMetrics && APP.hideMetrics.google;
-
-  if (hideMetrics) {
-    clearMetricSummarySections("google");
-  } else {
-    renderCampaignSummaryCards("googleCampaignSummary", filteredRows);
-    renderAdGroupAssetTypeCards("googleAdGroupAssetTypeSummary", filteredRows);
-    clearElement("googleAssetTypeSummary");
-    renderBenchmarks("googleBenchmarks", APP.googleBenchmarks);
-  }
   renderAnalysisTable("googleTable", rows, APP.googleBenchmarks, "google");
 }
 
@@ -1907,17 +1631,6 @@ function renderMetaAnalysis() {
   analysis.style.display = "";
 
   renderMetricFilterSummary("metaMetricFilters", "meta", APP.metaBenchmarks);
-  const filteredRows = applyMetricFilters(rows, "meta");
-  const hideMetrics = APP.hideMetrics && APP.hideMetrics.meta;
-
-  if (hideMetrics) {
-    clearMetricSummarySections("meta");
-  } else {
-    renderCampaignSummaryCards("metaCampaignSummary", filteredRows);
-    renderAdGroupAssetTypeCards("metaAdGroupAssetTypeSummary", filteredRows);
-    clearElement("metaAssetTypeSummary");
-    renderBenchmarks("metaBenchmarks", APP.metaBenchmarks);
-  }
   renderAnalysisTable("metaTable", rows, APP.metaBenchmarks, "meta");
 }
 
@@ -2092,9 +1805,8 @@ function summarizeRows(items) {
     totalInstalls,
     avgCTR: safeDivide(totalClicks, totalImpr),
     avgCPI: safeDivide(totalCost, totalInstalls),
-    stayCount: items.filter(r => r.actionPlan === "STAY").length,
-    changeCount: items.filter(r => r.actionPlan === "CHANGE").length,
-    pauseCount: items.filter(r => r.actionPlan === "PAUSE").length
+    keepCount: items.filter(r => r.actionPlan === "KEEP").length,
+    changeCount: items.filter(r => r.actionPlan === "CHANGE").length
   };
 }
 
@@ -2110,9 +1822,8 @@ function renderSummaryCard(title, subtitle, items) {
         <div class="card-metric"><span class="card-metric-label">Installs</span><span class="card-metric-value">${fmtNum(s.totalInstalls)}</span></div>
         <div class="card-metric"><span class="card-metric-label">Avg CTR</span><span class="card-metric-value">${fmtPct(s.avgCTR)}</span></div>
         <div class="card-metric"><span class="card-metric-label">Avg CPI</span><span class="card-metric-value">${fmtCurrency(s.avgCPI)}</span></div>
-        <div class="card-metric"><span class="card-metric-label">Stay</span><span class="card-metric-value" style="color:var(--stay)">${s.stayCount}</span></div>
+        <div class="card-metric"><span class="card-metric-label">Keep</span><span class="card-metric-value" style="color:var(--stay)">${s.keepCount}</span></div>
         <div class="card-metric"><span class="card-metric-label">Change</span><span class="card-metric-value" style="color:var(--change)">${s.changeCount}</span></div>
-        <div class="card-metric"><span class="card-metric-label">Pause</span><span class="card-metric-value" style="color:var(--pause)">${s.pauseCount}</span></div>
       </div>
     </div>
   `;
@@ -2217,33 +1928,6 @@ function renderAssetTypeCards(containerId, rows, benchmarks) {
   }).join("");
 }
 
-function renderBenchmarks(containerId, benchmarks) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  const types = Object.entries(benchmarks || {});
-  if (!types.length) {
-    container.innerHTML = "";
-    return;
-  }
-
-  container.innerHTML = `
-    <h4>Median Benchmarks by Campaign / Ad Group / Asset Type</h4>
-    <div class="benchmark-groups">
-      ${types.map(([, b]) => `
-        <div class="benchmark-group">
-          <div class="benchmark-group-title">${esc(b.label || b.assetType)}</div>
-          <div class="benchmark-item"><span>CTR</span><span>${fmtPct(b.medianCTR)}</span></div>
-          <div class="benchmark-item"><span>Click&gt;Install%</span><span>${fmtPct(b.medianClickToInstall)}</span></div>
-          <div class="benchmark-item"><span>CPI</span><span>${fmtCurrency(b.medianCPI)}</span></div>
-          <div class="benchmark-item"><span>Cost</span><span>${fmtCurrency(b.medianCost)}</span></div>
-          <div class="benchmark-item"><span>Installs</span><span>${fmtNum(b.medianInstalls)}</span></div>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
 function renderAnalysisTable(tableId, rows, benchmarks, platform) {
   const table = document.getElementById(tableId);
   if (!table) return;
@@ -2289,10 +1973,7 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
     })
   ), platform);
 
-  const sorted = [...activeRows].sort((a, b) => {
-    if (a.assetType !== b.assetType) return a.assetType.localeCompare(b.assetType);
-    return b.cost - a.cost;
-  });
+  const sorted = sortRowsForTable(activeRows, platform);
 
   if (!sorted.length) {
     tbody.innerHTML = `<tr><td colspan="${analysisTableColspan(showPlacementColumn, showCountColumn, hideMetrics)}" class="empty-table-cell">No rows match the current filters.</td></tr>`;
@@ -2303,11 +1984,14 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
     const bench = benchmarks[row.benchmarkKey || benchmarkKeyForRow(row)] || {};
     const ctrVsMed = (row.ctr !== null && bench.medianCTR) ? row.ctr / bench.medianCTR - 1 : null;
     const c2iVsMed = (row.clickToInstall !== null && bench.medianClickToInstall) ? row.clickToInstall / bench.medianClickToInstall - 1 : null;
+    const metricGuardrail = actionMetricGuardrailForRow(row);
+    const ctrTarget = metricGuardrail.ctr > 0 ? metricGuardrail.ctr : bench.medianCTR;
+    const c2iTarget = metricGuardrail.clickToInstall > 0 ? metricGuardrail.clickToInstall : bench.medianClickToInstall;
 
     const rowClass =
-      row.actionPlan === "STAY" ? "row-stay" :
+      row.actionPlan === "KEEP" ? "row-stay" :
       row.actionPlan === "CHANGE" ? "row-change" :
-      row.actionPlan === "PAUSE" ? "row-pause" : "";
+      "";
 
     return `<tr class="${rowClass}">
       ${showPlacementColumn ? `<td>${esc(row.channel)}</td>` : ""}
@@ -2321,8 +2005,8 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
         <td class="numeric">${fmtCurrency(row.cost)}</td>
         <td class="numeric">${fmtNum(row.impressions)}</td>
         <td class="numeric">${row.hasClicks !== false ? fmtNum(row.clicks) : "-"}</td>
-        <td class="numeric">${row.ctr !== null ? fmtPct(row.ctr) : "-"}</td>
-        <td class="numeric">${row.clickToInstall !== null ? fmtPct(row.clickToInstall) : "-"}</td>
+        <td class="numeric">${renderPerformanceMetric(row.ctr, ctrTarget)}</td>
+        <td class="numeric">${renderPerformanceMetric(row.clickToInstall, c2iTarget)}</td>
         <td class="numeric">${fmtNum(row.installs)}</td>
         <td class="numeric">${row.installs > 0 ? fmtCurrency(row.costPerInstall) : "-"}</td>
         <td>${renderBenchIndicator(ctrVsMed)}</td>
@@ -2340,6 +2024,29 @@ function analysisTableColspan(showPlacementColumn, showCountColumn, hideMetrics)
   const dimensionCols = (showPlacementColumn ? 1 : 0) + 5; // campaign, ad group, asset type, content type, asset
   const metricCols = hideMetrics ? 0 : (showCountColumn ? 10 : 9);
   return dimensionCols + metricCols + 1; // action plan
+}
+
+function sortRowsForTable(rows, tableKey) {
+  const sortKey = (APP.tableSort && APP.tableSort[tableKey]) || defaultSortForTable(tableKey);
+  const direction = sortKey === "costPerInstall" ? "asc" : "desc";
+
+  return [...rows].sort((a, b) => {
+    const av = sortableMetricValue(a, sortKey);
+    const bv = sortableMetricValue(b, sortKey);
+    if (av !== bv) return direction === "asc" ? av - bv : bv - av;
+    return (b.cost || 0) - (a.cost || 0);
+  });
+}
+
+function defaultSortForTable(tableKey) {
+  return tableKey === "placement" ? "cost" : "installs";
+}
+
+function sortableMetricValue(row, key) {
+  if (key === "costPerInstall") return row.installs > 0 ? row.costPerInstall : Number.POSITIVE_INFINITY;
+  if (key === "ctr" || key === "clickToInstall") return row[key] ?? -1;
+  if (key === "installs") return row.installs || 0;
+  return row.cost || 0;
 }
 
 function renderAssetCell(row) {
@@ -2486,10 +2193,17 @@ function renderBenchIndicator(val) {
   return `<span class="bench-indicator ${cls}">${arrow} ${(val * 100).toFixed(1)}%</span>`;
 }
 
+function renderPerformanceMetric(value, target) {
+  if (value === null || value === undefined) return "-";
+  if (!target || target <= 0) return fmtPct(value);
+
+  const cls = value >= target ? "metric-good" : "metric-bad";
+  return `<span class="${cls}">${fmtPct(value)}</span>`;
+}
+
 function renderActionLabel(action) {
-  if (action === "STAY") return `<span class="action-label stay">STAY</span>`;
+  if (action === "KEEP") return `<span class="action-label stay">KEEP</span>`;
   if (action === "CHANGE") return `<span class="action-label change">CHANGE</span>`;
-  if (action === "PAUSE") return `<span class="action-label pause">PAUSE / REPLACE</span>`;
   if (action === "INACTIVE") return `<span class="action-label" style="background:#e5e7eb;color:#6b7280;">INACTIVE</span>`;
 
   return `<span class="action-label" style="background:#f1f5f9;color:#64748b;">N/A</span>`;
@@ -2504,7 +2218,7 @@ function renderPlacementAnalysis() {
 
   if (!noData || !analysis) return;
 
-  const allPlacements = [...(APP.placementGoogle || []), ...(APP.placementMeta || [])];
+  const allPlacements = APP.placementGoogle || [];
 
   if (!allPlacements.length) {
     noData.style.display = "";
@@ -2515,11 +2229,6 @@ function renderPlacementAnalysis() {
   noData.style.display = "none";
   analysis.style.display = "";
 
-  const flagsDiv = document.getElementById("placementGuardrailFlags");
-  if (flagsDiv) flagsDiv.innerHTML = "";
-
-  renderPlacementProportions(allPlacements);
-
   const table = document.getElementById("placementTable");
   if (!table) return;
 
@@ -2528,323 +2237,39 @@ function renderPlacementAnalysis() {
   const hideMetrics = APP.hideMetrics && APP.hideMetrics.placement;
 
   thead.innerHTML = `<tr>
-    <th>Platform</th>
-    <th>Campaign</th>
-    <th>Ad Group</th>
-    <th>Asset Type</th>
-    <th>Content Type</th>
     <th>Placement</th>
     ${hideMetrics ? "" : `
       <th class="numeric">Cost</th>
-      <th class="numeric">Impr.</th>
-      <th class="numeric">Clicks</th>
+      <th class="numeric">Budget Proportion</th>
+      <th class="numeric">Install</th>
       <th class="numeric">CTR</th>
-      <th class="numeric">Click&gt;Install%</th>
-      <th class="numeric">Installs</th>
-      <th class="numeric">Cost/Install</th>
-      <th class="numeric">Row Share</th>
-      <th class="numeric">Cost Proportion</th>
-      <th>Spend Status</th>
+      <th class="numeric">CPI</th>
+      <th class="numeric">Click to Install</th>
+      <th>Benchmark</th>
+      <th>Action Plan</th>
     `}
   </tr>`;
 
-  tbody.innerHTML = allPlacements.sort((a, b) => b.cost - a.cost).map(p => `
-    <tr>
-      <td>${p.platform === "google" ? "Google Ads" : "Meta Ads"}</td>
-      <td>${esc(p.campaign)}</td>
-      <td>${esc(p.adGroup)}</td>
-      <td>${esc(p.assetType)}</td>
-      <td>${esc(p.contentType || "-")}</td>
+  tbody.innerHTML = sortRowsForTable(allPlacements, "placement").map(p => `
+    <tr class="${p.actionPlan === "CHANGE" ? "row-change" : "row-stay"}">
       <td>${esc(p.placement)}</td>
       ${hideMetrics ? "" : `
         <td class="numeric">${fmtCurrency(p.cost)}</td>
-        <td class="numeric">${fmtNum(p.impressions)}</td>
-        <td class="numeric">${p.hasClicks ? fmtNum(p.clicks) : "-"}</td>
-        <td class="numeric">${p.ctr !== null ? fmtPct(p.ctr) : "-"}</td>
-        <td class="numeric">${p.clickToInstall !== null ? fmtPct(p.clickToInstall) : "-"}</td>
-        <td class="numeric">${fmtNum(p.installs)}</td>
-        <td class="numeric">${p.installs > 0 ? fmtCurrency(p.costPerInstall) : "-"}</td>
-        <td class="numeric">${fmtPct(p.rowCostShare)}</td>
         <td class="numeric">${fmtPct(p.costProportion)}</td>
-        <td>${esc(p.guardrailStatus)}</td>
+        <td class="numeric">${fmtNum(p.installs)}</td>
+        <td class="numeric">${p.ctr !== null ? fmtPct(p.ctr) : "-"}</td>
+        <td class="numeric">${p.installs > 0 ? fmtCurrency(p.costPerInstall) : "-"}</td>
+        <td class="numeric">${p.clickToInstall !== null ? fmtPct(p.clickToInstall) : "-"}</td>
+        <td>${renderBenchmarkLabel(p.benchmarkStatus)}</td>
+        <td>${renderActionLabel(p.actionPlan)}</td>
       `}
     </tr>
   `).join("");
 }
 
-function renderPlacementProportions(placements) {
-  const container = document.getElementById("placementProportions");
-  if (!container) return;
-
-  container.innerHTML = [
-    renderPlacementProportionSection(
-      "Placement Mix by Campaign",
-      "Campaign-level view, useful for guardrail reading",
-      buildPlacementMixGroups(placements, p => `${p.platform}||${p.campaign}`, p => ({
-        platform: p.platform,
-        title: p.campaign,
-        subtitle: p.platform === "google" ? "Google Ads" : "Meta Ads"
-      }))
-    ),
-    renderPlacementProportionSection(
-      "Asset Type Cost Mix by Campaign",
-      "Cost share inside each campaign, split by asset type",
-      buildCostMixGroups(placements, p => `${p.platform}||${p.campaign}`, p => ({
-        platform: p.platform,
-        title: p.campaign,
-        subtitle: p.platform === "google" ? "Google Ads" : "Meta Ads"
-      }), p => p.assetType || "Unknown")
-    ),
-    renderPlacementProportionSection(
-      "Placement Mix by Ad Group",
-      "Placement distribution inside each ad group",
-      buildPlacementMixGroups(placements, p => `${p.platform}||${p.campaign}||${p.adGroup}`, p => ({
-        platform: p.platform,
-        title: p.adGroup,
-        subtitle: `${p.platform === "google" ? "Google Ads" : "Meta Ads"} | ${p.campaign}`
-      }))
-    ),
-    renderPlacementProportionSection(
-      "Placement Mix by Asset Type",
-      "Where each asset type spends across placements",
-      buildPlacementMixGroups(placements, p => `${p.platform}||${p.assetType}`, p => ({
-        platform: p.platform,
-        title: p.assetType,
-        subtitle: p.platform === "google" ? "Google Ads" : "Meta Ads"
-      }))
-    )
-  ].join("");
-}
-
-function buildCostMixGroups(rows, keyFn, metaFn, itemLabelFn) {
-  const groups = new Map();
-
-  for (const row of rows) {
-    const key = keyFn(row);
-
-    if (!groups.has(key)) {
-      groups.set(key, {
-        ...metaFn(row),
-        totalCost: 0,
-        totalImpressions: 0,
-        itemsByLabel: new Map()
-      });
-    }
-
-    const group = groups.get(key);
-    const label = itemLabelFn(row);
-    group.totalCost += row.cost || 0;
-    group.totalImpressions += row.impressions || 0;
-
-    if (!group.itemsByLabel.has(label)) {
-      group.itemsByLabel.set(label, {
-        placement: label,
-        cost: 0,
-        impressions: 0,
-        clicks: 0,
-        installs: 0
-      });
-    }
-
-    const item = group.itemsByLabel.get(label);
-    item.cost += row.cost || 0;
-    item.impressions += row.impressions || 0;
-    item.clicks += row.clicks || 0;
-    item.installs += row.installs || 0;
-  }
-
-  return [...groups.values()].map(group => ({
-    ...group,
-    items: [...group.itemsByLabel.values()]
-      .map(item => ({
-        ...item,
-        costShare: safeDivide(item.cost, group.totalCost),
-        ctr: safeDivide(item.clicks, item.impressions),
-        cpi: safeDivide(item.cost, item.installs)
-      }))
-      .sort((a, b) => b.costShare - a.costShare)
-  })).sort((a, b) => b.totalCost - a.totalCost);
-}
-
-function buildPlacementMixGroups(placements, keyFn, metaFn) {
-  const groups = new Map();
-
-  for (const p of placements) {
-    const key = keyFn(p);
-
-    if (!groups.has(key)) {
-      groups.set(key, {
-        ...metaFn(p),
-        totalCost: 0,
-        totalImpressions: 0,
-        placements: new Map()
-      });
-    }
-
-    const group = groups.get(key);
-    group.totalCost += p.cost || 0;
-    group.totalImpressions += p.impressions || 0;
-
-    if (!group.placements.has(p.placement)) {
-      group.placements.set(p.placement, {
-        placement: p.placement,
-        cost: 0,
-        impressions: 0,
-        clicks: 0,
-        installs: 0
-      });
-    }
-
-    const item = group.placements.get(p.placement);
-    item.cost += p.cost || 0;
-    item.impressions += p.impressions || 0;
-    item.clicks += p.clicks || 0;
-    item.installs += p.installs || 0;
-  }
-
-  return [...groups.values()].map(group => ({
-    ...group,
-    items: [...group.placements.values()]
-      .map(item => ({
-        ...item,
-        costShare: safeDivide(item.cost, group.totalCost),
-        ctr: safeDivide(item.clicks, item.impressions),
-        cpi: safeDivide(item.cost, item.installs)
-      }))
-      .sort((a, b) => b.costShare - a.costShare)
-  })).sort((a, b) => b.totalCost - a.totalCost);
-}
-
-function renderPlacementProportionSection(title, badge, groups) {
-  if (!groups.length) return "";
-  const hideMetrics = APP.hideMetrics && APP.hideMetrics.placement;
-
-  return `
-    <div class="placement-proportion-header">
-      <h4>${esc(title)}</h4>
-      <span class="badge">${esc(badge)}</span>
-    </div>
-    <div class="placement-proportion-grid">
-      ${groups.map(group => {
-        return `
-          <div class="placement-proportion-card">
-            <div class="placement-proportion-title">
-              <span>${esc(group.subtitle)}</span>
-              <strong>${esc(group.title)}</strong>
-            </div>
-            <div class="placement-share-list">
-              ${group.items.map(item => `
-                <div class="placement-share-row">
-                  <div class="placement-share-label">
-                    <span>${esc(item.placement)}</span>
-                    ${hideMetrics ? "" : `<strong>${fmtPct(item.costShare)}</strong>`}
-                  </div>
-                  ${hideMetrics ? "" : `<div class="placement-share-bar">
-                    <span style="width:${Math.min(100, Math.max(0, item.costShare * 100)).toFixed(2)}%"></span>
-                  </div>
-                  <div class="placement-share-meta">${fmtCurrency(item.cost)} cost | ${fmtNum(item.impressions)} impr. | ${fmtNum(item.installs)} installs</div>`}
-                </div>
-              `).join("")}
-            </div>
-          </div>
-        `;
-      }).join("")}
-    </div>
-  `;
-}
-
-// ============================================
-// RENDERING - WEEK-OVER-WEEK
-// ============================================
-function renderWoWAnalysis() {
-  const noData = document.getElementById("wowNoData");
-  const analysis = document.getElementById("wowAnalysis");
-
-  if (!noData || !analysis) return;
-
-  if (!APP.wowResults || !APP.wowResults.length) {
-    noData.style.display = "";
-    analysis.style.display = "none";
-    return;
-  }
-
-  noData.style.display = "none";
-  analysis.style.display = "";
-
-  const flagsDiv = document.getElementById("wowFlags");
-  const allFlags = APP.wowResults.flatMap(r => r.flags.map(f => ({ flag: f, asset: r.asset, campaign: r.campaign })));
-
-  if (flagsDiv) {
-    const criticalFlags = allFlags.filter(f => f.flag.includes("Cost up") || f.flag.includes("CPI increase") || f.flag.includes("Stopped"));
-    const warningFlags = allFlags.filter(f => f.flag.includes("drop") || f.flag.includes("New"));
-
-    flagsDiv.innerHTML = [
-      ...criticalFlags.map(f => `<span class="wow-flag critical">&#9888; ${esc(f.asset)}: ${esc(f.flag)}</span>`),
-      ...warningFlags.map(f => `<span class="wow-flag warning">&#9888; ${esc(f.asset)}: ${esc(f.flag)}</span>`)
-    ].join("");
-  }
-
-  const table = document.getElementById("wowTable");
-  if (!table) return;
-
-  const thead = table.querySelector("thead");
-  const tbody = table.querySelector("tbody");
-
-  thead.innerHTML = `<tr>
-    <th>Platform</th>
-    <th>Placement</th>
-    <th>Campaign</th>
-    <th>Ad Group</th>
-    <th>Asset Type</th>
-    <th>Content Type</th>
-    <th>Asset</th>
-    <th class="numeric">Cost WoW</th>
-    <th class="numeric">Impr WoW</th>
-    <th class="numeric">Click WoW</th>
-    <th class="numeric">CTR WoW</th>
-    <th class="numeric">C2I WoW</th>
-    <th class="numeric">Install WoW</th>
-    <th class="numeric">CPI WoW</th>
-    <th>Flags</th>
-  </tr>`;
-
-  tbody.innerHTML = APP.wowResults.sort((a, b) => b.flags.length - a.flags.length).map(r => `
-    <tr class="${r.flags.length > 0 ? "row-pause" : ""}">
-      <td>${r.platform === "google" ? "Google" : "Meta"}</td>
-      <td>${esc(r.channel || "-")}</td>
-      <td>${esc(r.campaign)}</td>
-      <td>${esc(r.adGroup)}</td>
-      <td>${esc(r.assetType)}</td>
-      <td>${esc(r.contentType || "-")}</td>
-      <td><strong>${esc(r.asset)}</strong></td>
-      <td class="numeric">${renderWoWDelta(r.wowCost)}</td>
-      <td class="numeric">${renderWoWDelta(r.wowImpr)}</td>
-      <td class="numeric">${renderWoWDelta(r.wowClicks)}</td>
-      <td class="numeric">${renderWoWDelta(r.wowCTR)}</td>
-      <td class="numeric">${renderWoWDelta(r.wowC2I)}</td>
-      <td class="numeric">${renderWoWDelta(r.wowInstalls)}</td>
-      <td class="numeric">${renderWoWDeltaInverse(r.wowCPI)}</td>
-      <td>${r.flags.map(f => `<span class="wow-flag critical" style="font-size:0.68rem;padding:2px 6px;">${esc(f)}</span>`).join(" ")}</td>
-    </tr>
-  `).join("");
-}
-
-function renderWoWDelta(val) {
-  if (val === null || val === undefined) return `<span class="wow-delta neutral">-</span>`;
-
-  const cls = val >= 0 ? "positive" : "negative";
-  const sign = val >= 0 ? "+" : "";
-
-  return `<span class="wow-delta ${cls}">${sign}${(val * 100).toFixed(1)}%</span>`;
-}
-
-function renderWoWDeltaInverse(val) {
-  if (val === null || val === undefined) return `<span class="wow-delta neutral">-</span>`;
-
-  const cls = val <= 0 ? "positive" : "negative";
-  const sign = val >= 0 ? "+" : "";
-
-  return `<span class="wow-delta ${cls}">${sign}${(val * 100).toFixed(1)}%</span>`;
+function renderBenchmarkLabel(status) {
+  const cls = status === "Strong" ? "stay" : status === "Weak" ? "change" : "";
+  return `<span class="action-label ${cls}">${esc(status || "Average")}</span>`;
 }
 
 // ============================================
@@ -2852,7 +2277,6 @@ function renderWoWDeltaInverse(val) {
 // ============================================
 function renderSummary() {
   const allRows = [...APP.googleRows, ...APP.metaRows].filter(r =>
-    r.week === "current" &&
     hasMeaningfulActivity({
       cost: r.cost,
       impressions: r.impressions,
@@ -2863,291 +2287,162 @@ function renderSummary() {
 
   const execDiv = document.getElementById("execSummary");
   const typeDiv = document.getElementById("assetTypeSummaryAll");
-  const actionDiv = document.getElementById("actionPlanOverview");
 
-  if (!execDiv || !typeDiv || !actionDiv) return;
+  if (!execDiv || !typeDiv) return;
 
   if (!allRows.length) {
-    execDiv.innerHTML = `<p class="empty-state">Generate analysis first to see the executive summary.</p>`;
+    execDiv.innerHTML = "";
     typeDiv.innerHTML = `<p class="empty-state">No data available yet.</p>`;
-    actionDiv.innerHTML = `<p class="empty-state">No data available yet.</p>`;
     return;
   }
 
-  const stayAssets = allRows.filter(r => r.actionPlan === "STAY");
-  const changeAssets = allRows.filter(r => r.actionPlan === "CHANGE");
-  const pauseAssets = allRows.filter(r => r.actionPlan === "PAUSE");
-
-  const bestAsset = [...allRows].filter(r => r.installs > 0).sort((a, b) => a.costPerInstall - b.costPerInstall)[0];
-  const worstAsset = [...allRows].filter(r => r.installs > 0).sort((a, b) => b.costPerInstall - a.costPerInstall)[0];
-
-  const byType = {};
-
-  for (const r of allRows) {
-    if (!byType[r.assetType]) byType[r.assetType] = { cost: 0, installs: 0 };
-    byType[r.assetType].cost += r.cost;
-    byType[r.assetType].installs += r.installs;
-  }
-
-  const typePerf = Object.entries(byType)
-    .map(([t, d]) => ({
-      type: t,
-      cpi: safeDivide(d.cost, d.installs),
-      installs: d.installs
-    }))
-    .filter(t => t.installs > 0);
-
-  const bestType = [...typePerf].sort((a, b) => a.cpi - b.cpi)[0];
-  const worstType = [...typePerf].sort((a, b) => b.cpi - a.cpi)[0];
-
-  const placementAbove = [...(APP.placementGoogle || []), ...(APP.placementMeta || [])]
-    .filter(p => p.guardrailStatus === "Above Guardrail");
-
-  const summaryCards = [];
-
-  if (bestType) {
-    summaryCards.push({
-      cls: "highlight-good",
-      title: "Best Asset Type",
-      text: `${bestType.type} with CPI ${fmtCurrency(bestType.cpi)} and ${fmtNum(bestType.installs)} installs.`
-    });
-  }
-
-  if (bestAsset) {
-    summaryCards.push({
-      cls: "highlight-good",
-      title: "Best Asset",
-      text: `"${bestAsset.asset}" (${bestAsset.assetType}) with CPI ${fmtCurrency(bestAsset.costPerInstall)}.`
-    });
-  }
-
-  if (worstType) {
-    summaryCards.push({
-      cls: "highlight-bad",
-      title: "Weakest Asset Type",
-      text: `${worstType.type} with CPI ${fmtCurrency(worstType.cpi)}.`
-    });
-  }
-
-  summaryCards.push({
-    cls: "",
-    title: "Action Summary",
-    text: `${stayAssets.length} assets to STAY, ${changeAssets.length} to CHANGE, ${pauseAssets.length} to PAUSE/REPLACE. ${APP.inactiveRows.length} inactive/no-activity rows excluded from analysis.`
-  });
-
-  if (placementAbove.length) {
-    summaryCards.push({
-      cls: "highlight-bad",
-      title: "Guardrail Alert",
-      text: `${placementAbove.length} placement(s) above guardrail: ${placementAbove.map(p => p.campaign + " - " + p.placement).join(", ")}.`
-    });
-  }
-
-  if (APP.wowResults && APP.wowResults.some(r => r.flags.length)) {
-    const flagged = APP.wowResults.filter(r => r.flags.length);
-
-    summaryCards.push({
-      cls: "highlight-warn",
-      title: "WoW Alerts",
-      text: `${flagged.length} asset(s) with major WoW changes detected.`
-    });
-  }
-
-  execDiv.innerHTML = summaryCards.map(c => `
-    <div class="summary-card ${c.cls}">
-      <h4>${esc(c.title)}</h4>
-      <p>${esc(c.text)}</p>
-    </div>
-  `).join("");
-
+  execDiv.innerHTML = "";
   renderAssetTypeSummaryTable(typeDiv, allRows);
+}
 
-  actionDiv.innerHTML = `
-    <div class="action-group stay-group">
-      <h4><span class="action-label stay">STAY</span> ${stayAssets.length} assets</h4>
-      <ul>${stayAssets.slice(0, 10).map(a => `<li>${esc(a.asset)} (${esc(a.assetType)})</li>`).join("")}${stayAssets.length > 10 ? `<li>...and ${stayAssets.length - 10} more</li>` : ""}</ul>
-    </div>
-    <div class="action-group change-group">
-      <h4><span class="action-label change">CHANGE</span> ${changeAssets.length} assets</h4>
-      <ul>${changeAssets.slice(0, 10).map(a => `<li>${esc(a.asset)} (${esc(a.assetType)})</li>`).join("")}${changeAssets.length > 10 ? `<li>...and ${changeAssets.length - 10} more</li>` : ""}</ul>
-    </div>
-    <div class="action-group pause-group">
-      <h4><span class="action-label pause">PAUSE / REPLACE</span> ${pauseAssets.length} assets</h4>
-      <ul>${pauseAssets.slice(0, 10).map(a => `<li>${esc(a.asset)} (${esc(a.assetType)})</li>`).join("")}${pauseAssets.length > 10 ? `<li>...and ${pauseAssets.length - 10} more</li>` : ""}</ul>
-    </div>
-  `;
+function buildSummaryGuardrailRows(rows, platform) {
+  const groups = SUMMARY_GUARDRAIL_GROUPS[platform] || [];
+  const byGroup = new Map();
+
+  for (const row of rows) {
+    const group = summaryGuardrailGroup(row);
+    if (!groups.includes(group)) continue;
+    if (!byGroup.has(group)) {
+      byGroup.set(group, {
+        platform,
+        group,
+        cost: 0,
+        impressions: 0,
+        clicks: 0,
+        installs: 0,
+        count: 0
+      });
+    }
+
+    const item = byGroup.get(group);
+    item.cost += row.cost || 0;
+    item.impressions += row.impressions || 0;
+    item.clicks += row.clicks || 0;
+    item.installs += row.installs || 0;
+    item.count += row.count || 1;
+  }
+
+  const aggregated = groups
+    .map(group => byGroup.get(group))
+    .filter(Boolean)
+    .map(item => ({
+      ...item,
+      ctr: safeDivide(item.clicks, item.impressions),
+      clickToInstall: safeDivide(item.installs, item.clicks)
+    }));
+
+  if (!aggregated.length) return [];
+
+  return aggregated.map(item => {
+    const actionGuardrail = actionMetricGuardrailForGroup(platform, item.group);
+    const ctrBenchmark = actionGuardrail.ctr || 0;
+    const clickToInstallBenchmark = actionGuardrail.clickToInstall || 0;
+    const underCTR = ctrBenchmark > 0 && item.ctr < ctrBenchmark;
+    const underClickToInstall = clickToInstallBenchmark > 0 && item.clickToInstall < clickToInstallBenchmark;
+
+    return {
+      ...item,
+      ctrBenchmark,
+      clickToInstallBenchmark,
+      underCTR,
+      underClickToInstall,
+      flagged: underCTR || underClickToInstall
+    };
+  });
+}
+
+function actionMetricGuardrailForGroup(platform, group) {
+  return (APP.actionMetricGuardrails[platform] && APP.actionMetricGuardrails[platform][group]) || { ctr: 0, clickToInstall: 0 };
+}
+
+function summaryGuardrailGroup(row) {
+  if (row.platform === "google") {
+    return normalizeSummaryGuardrailGroup(row.assetType || row.contentType || "");
+  }
+
+  return normalizeSummaryGuardrailGroup(row.contentType || row.assetType || "");
+}
+
+function normalizeSummaryGuardrailGroup(value) {
+  const s = String(value || "").toLowerCase();
+
+  if (s.includes("headline")) return "Headline";
+  if (s.includes("description")) return "Description";
+  if (s.includes("horizontal") || s.includes("image")) return "Horizontal Image";
+  if (s.includes("youtube") || s.includes("video")) return "Youtube Video";
+  if (s.includes("html5") || s.includes("html 5")) return "HTML5";
+  if (s.includes("kol")) return "KOL";
+  if (s.includes("job") || s.includes("listing")) return "Job Listing";
+  if (s.includes("social") || s.includes("sosmed") || s.includes("socmed")) return "Social Media";
+
+  return String(value || "").trim();
+}
+
+function renderSummarySignalLabel(row) {
+  if (!row.flagged) return `<span class="action-label stay">OK</span>`;
+
+  const reasons = [];
+  if (row.underCTR) reasons.push("CTR under");
+  if (row.underClickToInstall) reasons.push("Click>Install under");
+
+  return `<span class="action-label change">FLAG</span><span class="signal-reason">${esc(reasons.join(", "))}</span>`;
 }
 
 function renderAssetTypeSummaryTable(container, allRows) {
-  const byType = {};
-
-  for (const r of allRows) {
-    if (!byType[r.assetType]) byType[r.assetType] = [];
-    byType[r.assetType].push(r);
-  }
-
-  const summaryRows = Object.entries(byType).map(([type, items]) => {
-    const totalCost = items.reduce((s, r) => s + r.cost, 0);
-    const totalImpr = items.reduce((s, r) => s + r.impressions, 0);
-    const totalClicks = items.reduce((s, r) => s + (r.clicks || 0), 0);
-    const totalInstalls = items.reduce((s, r) => s + r.installs, 0);
-
-    const avgCTR = safeDivide(totalClicks, totalImpr);
-    const avgC2I = safeDivide(totalInstalls, totalClicks);
-    const avgCPI = safeDivide(totalCost, totalInstalls);
-
-    const best = [...items].filter(r => r.installs > 0).sort((a, b) => a.costPerInstall - b.costPerInstall)[0];
-    const worst = [...items].filter(r => r.installs > 0).sort((a, b) => b.costPerInstall - a.costPerInstall)[0];
-
-    return {
-      type,
-      totalCost,
-      totalImpr,
-      totalClicks,
-      totalInstalls,
-      avgCTR,
-      avgC2I,
-      avgCPI,
-      best,
-      worst,
-      count: items.length
-    };
-  }).sort((a, b) => b.totalCost - a.totalCost);
+  const summaryRows = [
+    ...buildSummaryGuardrailRows(allRows.filter(r => r.platform === "google"), "google"),
+    ...buildSummaryGuardrailRows(allRows.filter(r => r.platform === "meta"), "meta")
+  ].filter(row => !isAppInstallIOSGroup(row.group)).sort((a, b) => {
+    if (a.platform !== b.platform) return a.platform.localeCompare(b.platform);
+    return b.cost - a.cost;
+  });
+  const costByPlatform = summaryRows.reduce((map, row) => {
+    map[row.platform] = (map[row.platform] || 0) + row.cost;
+    return map;
+  }, {});
 
   container.innerHTML = `
     <div class="table-scroll">
       <table class="summary-table">
         <thead><tr>
-          <th>Asset Type</th>
+          <th>Platform</th>
+          <th>Guardrail</th>
           <th class="numeric">Assets</th>
           <th class="numeric">Cost</th>
-          <th class="numeric">Impr.</th>
+          <th class="numeric">Budget Proportion</th>
           <th class="numeric">Clicks</th>
           <th class="numeric">CTR</th>
           <th class="numeric">Installs</th>
           <th class="numeric">Click&gt;Install%</th>
           <th class="numeric">CPI</th>
-          <th>Best Asset</th>
-          <th>Worst Asset</th>
+          <th>Signal</th>
         </tr></thead>
-        <tbody>${summaryRows.map(r => `<tr>
-          <td><strong>${esc(r.type)}</strong></td>
+        <tbody>${summaryRows.map(r => `<tr class="${r.flagged ? "row-change" : "row-stay"}">
+          <td>${r.platform === "google" ? "Google Ads" : "Meta Ads"}</td>
+          <td><strong>${esc(r.group)}</strong></td>
           <td class="numeric">${fmtNum(r.count)}</td>
-          <td class="numeric">${fmtCurrency(r.totalCost)}</td>
-          <td class="numeric">${fmtNum(r.totalImpr)}</td>
-          <td class="numeric">${fmtNum(r.totalClicks)}</td>
-          <td class="numeric">${fmtPct(r.avgCTR)}</td>
-          <td class="numeric">${fmtNum(r.totalInstalls)}</td>
-          <td class="numeric">${fmtPct(r.avgC2I)}</td>
-          <td class="numeric">${r.totalInstalls > 0 ? fmtCurrency(r.avgCPI) : "-"}</td>
-          <td>${r.best ? esc(r.best.asset) : "-"}</td>
-          <td>${r.worst ? esc(r.worst.asset) : "-"}</td>
+          <td class="numeric">${fmtCurrency(r.cost)}</td>
+          <td class="numeric">${fmtPct(safeDivide(r.cost, costByPlatform[r.platform]))}</td>
+          <td class="numeric">${fmtNum(r.clicks)}</td>
+          <td class="numeric">${fmtPct(r.ctr)}</td>
+          <td class="numeric">${fmtNum(r.installs)}</td>
+          <td class="numeric">${fmtPct(r.clickToInstall)}</td>
+          <td class="numeric">${r.installs > 0 ? fmtCurrency(safeDivide(r.cost, r.installs)) : "-"}</td>
+          <td>${renderSummarySignalLabel(r)}</td>
         </tr>`).join("")}</tbody>
       </table>
     </div>
   `;
 }
 
-// ============================================
-// GUARDRAIL UI
-// ============================================
-function addGuardrailCampaign() {
-  const container = document.getElementById("googleGuardrails");
-  const template = document.getElementById("guardrailCampaignTemplate");
-
-  if (!container || !template) return;
-
-  const block = template.content.cloneNode(true);
-  const div = block.querySelector(".guardrail-campaign-block");
-  const id = crypto.randomUUID();
-
-  div.dataset.id = id;
-
-  const guardrail = {
-    id,
-    campaign: "",
-    search: 70,
-    gdn: 20,
-    youtube: 15
-  };
-
-  APP.guardrails.google.push(guardrail);
-
-  div.querySelector(".guardrail-campaign-name").addEventListener("input", e => {
-    guardrail.campaign = e.target.value;
-    runAnalysis();
-  });
-
-  div.querySelector(".g-search").addEventListener("change", e => {
-    guardrail.search = Number(e.target.value) || 0;
-    runAnalysis();
-  });
-
-  div.querySelector(".g-gdn").addEventListener("change", e => {
-    guardrail.gdn = Number(e.target.value) || 0;
-    runAnalysis();
-  });
-
-  div.querySelector(".g-youtube").addEventListener("change", e => {
-    guardrail.youtube = Number(e.target.value) || 0;
-    runAnalysis();
-  });
-
-  div.querySelector(".remove-guardrail-btn").addEventListener("click", () => {
-    APP.guardrails.google = APP.guardrails.google.filter(g => g.id !== id);
-    div.remove();
-    runAnalysis();
-  });
-
-  container.appendChild(block);
-}
-
-function renderGuardrailCampaigns() {
-  const container = document.getElementById("googleGuardrails");
-  const template = document.getElementById("guardrailCampaignTemplate");
-
-  if (!container || !template) return;
-
-  container.innerHTML = "";
-
-  for (const g of APP.guardrails.google) {
-    const block = template.content.cloneNode(true);
-    const div = block.querySelector(".guardrail-campaign-block");
-
-    div.dataset.id = g.id;
-    div.querySelector(".guardrail-campaign-name").value = g.campaign;
-    div.querySelector(".g-search").value = g.search;
-    div.querySelector(".g-gdn").value = g.gdn;
-    div.querySelector(".g-youtube").value = g.youtube;
-
-    div.querySelector(".guardrail-campaign-name").addEventListener("input", e => {
-      g.campaign = e.target.value;
-      runAnalysis();
-    });
-
-    div.querySelector(".g-search").addEventListener("change", e => {
-      g.search = Number(e.target.value) || 0;
-      runAnalysis();
-    });
-
-    div.querySelector(".g-gdn").addEventListener("change", e => {
-      g.gdn = Number(e.target.value) || 0;
-      runAnalysis();
-    });
-
-    div.querySelector(".g-youtube").addEventListener("change", e => {
-      g.youtube = Number(e.target.value) || 0;
-      runAnalysis();
-    });
-
-    div.querySelector(".remove-guardrail-btn").addEventListener("click", () => {
-      APP.guardrails.google = APP.guardrails.google.filter(x => x.id !== g.id);
-      div.remove();
-      runAnalysis();
-    });
-
-    container.appendChild(block);
-  }
+function isAppInstallIOSGroup(value) {
+  const s = String(value || "").toLowerCase();
+  return s.includes("app install") && s.includes("ios");
 }
 
 // ============================================
@@ -3174,30 +2469,24 @@ function updateStats() {
 // EXPORT
 // ============================================
 function handleExport(type) {
-  let csvContent = "";
-  let filename = "export.csv";
+  let sheetContent = "";
+  let filename = "export_for_google_sheets.tsv";
 
   if (type === "google") {
-    csvContent = exportAnalysisCSV(getCurrentActiveRows(APP.googleRows), "google");
-    filename = "google_ads_analysis.csv";
+    sheetContent = exportAnalysisSheet(getCurrentActiveRows(APP.googleRows), "google");
+    filename = "google_ads_analysis_for_sheets.tsv";
   } else if (type === "meta") {
-    csvContent = exportAnalysisCSV(getCurrentActiveRows(APP.metaRows), "meta");
-    filename = "meta_ads_analysis.csv";
+    sheetContent = exportAnalysisSheet(getCurrentActiveRows(APP.metaRows), "meta");
+    filename = "meta_ads_analysis_for_sheets.tsv";
   } else if (type === "placement") {
-    csvContent = exportPlacementCSV();
-    filename = "placement_analysis.csv";
-  } else if (type === "wow") {
-    csvContent = exportWoWCSV();
-    filename = "wow_analysis.csv";
-  } else if (type === "all") {
-    csvContent = exportAllCSV();
-    filename = "full_analysis_export.csv";
+    sheetContent = exportPlacementSheet();
+    filename = "google_placement_analysis_for_sheets.tsv";
   }
 
-  downloadCSV(csvContent, filename);
+  exportToGoogleSheets(sheetContent, filename);
 }
 
-function exportAnalysisCSV(rows, platform = "") {
+function exportAnalysisSheet(rows, platform = "") {
   const includeChannel = platform !== "google";
   const includeCount = platform !== "google";
   const headers = [
@@ -3218,16 +2507,16 @@ function exportAnalysisCSV(rows, platform = "") {
     "Action Plan"
   ];
 
-  const lines = [headers.join(",")];
+  const lines = [headers.map(sheetEscape).join("\t")];
 
   for (const r of rows) {
     lines.push([
-      ...(includeChannel ? [csvEscape(r.channel)] : []),
-      csvEscape(r.campaign),
-      csvEscape(r.adGroup),
-      csvEscape(r.assetType),
-      csvEscape(r.contentType || ""),
-      csvEscape(r.asset),
+      ...(includeChannel ? [r.channel] : []),
+      r.campaign,
+      r.adGroup,
+      r.assetType,
+      r.contentType || "",
+      r.asset,
       ...(includeCount ? [r.count] : []),
       r.cost.toFixed(2),
       r.impressions,
@@ -3237,100 +2526,39 @@ function exportAnalysisCSV(rows, platform = "") {
       r.installs,
       r.installs > 0 ? r.costPerInstall.toFixed(2) : "",
       r.actionPlan
-    ].join(","));
+    ].map(sheetEscape).join("\t"));
   }
 
   return lines.join("\n");
 }
 
-function exportPlacementCSV() {
-  const allPlacements = [...(APP.placementGoogle || []), ...(APP.placementMeta || [])];
-
+function exportPlacementSheet() {
   const headers = [
-    "Platform",
-    "Campaign",
-    "Ad Group",
-    "Asset Type",
-    "Content Type",
     "Placement",
     "Cost",
-    "Impr.",
-    "Clicks",
+    "Budget Proportion",
+    "Install",
     "CTR",
-    "Click>Install%",
-    "Installs",
-    "Cost/Install",
-    "Row Share",
-    "Cost Proportion",
-    "Spend Status"
+    "CPI",
+    "Click to Install",
+    "Benchmark",
+    "Action Plan"
   ];
 
-  const lines = [headers.join(",")];
+  const lines = [headers.map(sheetEscape).join("\t")];
 
-  for (const p of allPlacements) {
+  for (const p of sortRowsForTable(APP.placementGoogle || [], "placement")) {
     lines.push([
-      p.platform === "google" ? "Google Ads" : "Meta Ads",
-      csvEscape(p.campaign),
-      csvEscape(p.adGroup),
-      csvEscape(p.assetType),
-      csvEscape(p.contentType || ""),
-      csvEscape(p.placement),
+      p.placement,
       p.cost.toFixed(2),
-      p.impressions,
-      p.clicks || 0,
-      p.ctr !== null ? (p.ctr * 100).toFixed(2) + "%" : "",
-      p.clickToInstall !== null ? (p.clickToInstall * 100).toFixed(2) + "%" : "",
-      p.installs,
-      p.installs > 0 ? p.costPerInstall.toFixed(2) : "",
-      (p.rowCostShare * 100).toFixed(2) + "%",
       (p.costProportion * 100).toFixed(2) + "%",
-      p.guardrailStatus
-    ].join(","));
-  }
-
-  return lines.join("\n");
-}
-
-function exportWoWCSV() {
-  if (!APP.wowResults) return "";
-
-  const headers = [
-    "Platform",
-    "Campaign",
-    "Ad Group",
-    "Asset Type",
-    "Content Type",
-    "Asset",
-    "Cost WoW",
-    "Impr WoW",
-    "Click WoW",
-    "CTR WoW",
-    "C2I WoW",
-    "Install WoW",
-    "CPI WoW",
-    "Flags"
-  ];
-
-  const lines = [headers.join(",")];
-
-  for (const r of APP.wowResults) {
-    lines.push([
-      r.platform,
-      csvEscape(r.channel || ""),
-      csvEscape(r.campaign),
-      csvEscape(r.adGroup),
-      csvEscape(r.assetType),
-      csvEscape(r.contentType || ""),
-      csvEscape(r.asset),
-      r.wowCost !== null ? (r.wowCost * 100).toFixed(1) + "%" : "",
-      r.wowImpr !== null ? (r.wowImpr * 100).toFixed(1) + "%" : "",
-      r.wowClicks !== null ? (r.wowClicks * 100).toFixed(1) + "%" : "",
-      r.wowCTR !== null ? (r.wowCTR * 100).toFixed(1) + "%" : "",
-      r.wowC2I !== null ? (r.wowC2I * 100).toFixed(1) + "%" : "",
-      r.wowInstalls !== null ? (r.wowInstalls * 100).toFixed(1) + "%" : "",
-      r.wowCPI !== null ? (r.wowCPI * 100).toFixed(1) + "%" : "",
-      csvEscape(r.flags.join("; "))
-    ].join(","));
+      p.installs,
+      p.ctr !== null ? (p.ctr * 100).toFixed(2) + "%" : "",
+      p.installs > 0 ? p.costPerInstall.toFixed(2) : "",
+      p.clickToInstall !== null ? (p.clickToInstall * 100).toFixed(2) + "%" : "",
+      p.benchmarkStatus,
+      p.actionPlan
+    ].map(sheetEscape).join("\t"));
   }
 
   return lines.join("\n");
@@ -3366,27 +2594,12 @@ function exportInactiveCSV() {
   return lines.join("\n");
 }
 
-function exportAllCSV() {
-  let content = "=== GOOGLE ADS ANALYSIS ===\n";
-  content += exportAnalysisCSV(getCurrentActiveRows(APP.googleRows), "google");
+function exportToGoogleSheets(content, filename) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(content).catch(() => {});
+  }
 
-  content += "\n\n=== META ADS ANALYSIS ===\n";
-  content += exportAnalysisCSV(getCurrentActiveRows(APP.metaRows), "meta");
-
-  content += "\n\n=== PLACEMENT ANALYSIS ===\n";
-  content += exportPlacementCSV();
-
-  content += "\n\n=== WEEK-OVER-WEEK ===\n";
-  content += exportWoWCSV();
-
-  content += "\n\n=== INACTIVE / NO-ACTIVITY ROWS EXCLUDED ===\n";
-  content += exportInactiveCSV();
-
-  return content;
-}
-
-function downloadCSV(content, filename) {
-  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob([content], { type: "text/tab-separated-values;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
 
@@ -3395,6 +2608,13 @@ function downloadCSV(content, filename) {
   a.click();
 
   URL.revokeObjectURL(url);
+
+  alert("Google Sheets export is ready. Import the downloaded TSV file into Google Sheets, or paste from clipboard if your browser allowed clipboard access.");
+}
+
+function sheetEscape(val) {
+  const s = String(val ?? "");
+  return /[\t\r\n"]/.test(s) ? `"${s.replace(/"/g, "\"\"")}"` : s;
 }
 
 function csvEscape(val) {
@@ -3442,16 +2662,6 @@ SEARCH,tROAS,No Spend Test,Headline,Inactive Asset,0,0.00%,0,0,0,,0.00%`;
 2026-05-10,2026-05-16,Glints Install Q2,Broad Audience,Carousel Job Listings,Active,22,45000,990000,18000,14500,20,2,Average,Average,Below average
 2026-05-10,2026-05-16,Glints Install Q2,Broad Audience,Vina Post Lebaran Special,Active,38,31000,1178000,26000,21000,35,3,Above average,Above average,Average`;
 
-  const googlePrevCSV = `Asset details report
-"May 3, 2026 - May 9, 2026"
-segmentation_info.ad_network,Campaign,Ad group,Asset type,Asset,Clicks,CTR,Impr.,Cost,Installs,Cost / Install,Conv. rate (install)
-SEARCH,Current Post Let,Jakarta Fresh Grads,Headline,Apply Now - Top Jobs,220,4.20%,"5,238","1,150,000",38,"30,263",17.27%
-SEARCH,Current Post Let,Jakarta Fresh Grads,Headline,Find Your Dream Career,195,3.50%,"5,571","1,020,000",32,"31,875",16.41%
-SEARCH,Current Post Let,Jakarta Fresh Grads,Description,Get hired in 7 days,290,4.80%,"6,042","1,380,000",50,"27,600",17.24%
-YOUTUBE,Current Post Let,Video Watchers,YouTube video,Career Growth Reel 30s,820,2.72%,"30,147","1,950,000",72,"27,083",8.78%
-SEARCH,tROAS,High Value Users,Headline,Premium Career Path,480,4.90%,"9,796","2,600,000",88,"29,545",18.33%
-YOUTUBE,tROAS,Video Audience,YouTube video,Success Story Interview,600,2.30%,"26,087","1,800,000",55,"32,727",9.17%`;
-
   const gParsed = parseCSVSmart(googleCSV);
   APP.files.push({
     id: crypto.randomUUID(),
@@ -3476,25 +2686,7 @@ YOUTUBE,tROAS,Video Audience,YouTube video,Success Story Interview,600,2.30%,"26
     dateRange: { start: "2026-05-10", end: "2026-05-16" }
   });
 
-  const gPrevParsed = parseCSVSmart(googlePrevCSV);
-  APP.files.push({
-    id: crypto.randomUUID(),
-    name: "sample-google-ads-week16.csv",
-    platform: "google",
-    week: "previous",
-    rawText: googlePrevCSV,
-    headers: gPrevParsed.headers,
-    rows: gPrevParsed.rows,
-    dateRange: { start: "May 3, 2026", end: "May 9, 2026" }
-  });
-
-  APP.guardrails.google = [
-    { id: crypto.randomUUID(), campaign: "Current Post Let", search: 73.62, gdn: 12.90, youtube: 13.09 },
-    { id: crypto.randomUUID(), campaign: "tROAS", search: 65, gdn: 36, youtube: 8 }
-  ];
-
   renderFilesList();
-  renderGuardrailCampaigns();
   runAnalysis();
 }
 
