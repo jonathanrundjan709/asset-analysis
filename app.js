@@ -25,6 +25,7 @@ const APP = {
     google: {},
     meta: {}
   },
+  assetTypeOverrides: {},
   hideMetrics: {
     google: false,
     meta: false,
@@ -41,11 +42,20 @@ const APP = {
 };
 
 const NO_METRIC_VALUES_SELECTED = "__no_metric_values_selected__";
+const UNDERSPEND_LIMIT_RATIO = 0.5;
+const ASSET_TYPE_OVERRIDE_STORAGE_KEY = "assetTypeOverrides.v1";
+const ASSET_TYPE_OPTIONS = [
+  "Social Media",
+  "KOL",
+  "Job Listing"
+];
+const CONTENT_TYPE_OPTIONS = ASSET_TYPE_OPTIONS;
 
 // ============================================
 // INIT
 // ============================================
 document.addEventListener("DOMContentLoaded", () => {
+  loadAssetTypeOverrides();
   wireNavTabs();
   wireUpload();
   wireGuardrails();
@@ -54,6 +64,23 @@ document.addEventListener("DOMContentLoaded", () => {
   wireHideMetrics();
   wireExport();
 });
+
+function loadAssetTypeOverrides() {
+  try {
+    const saved = localStorage.getItem(ASSET_TYPE_OVERRIDE_STORAGE_KEY);
+    const parsed = saved ? JSON.parse(saved) : {};
+    APP.assetTypeOverrides = Object.fromEntries(
+      Object.entries(parsed).map(([key, value]) => [key, normalizeAssetTypeBucket(value)])
+    );
+    saveAssetTypeOverrides();
+  } catch (err) {
+    APP.assetTypeOverrides = {};
+  }
+}
+
+function saveAssetTypeOverrides() {
+  localStorage.setItem(ASSET_TYPE_OVERRIDE_STORAGE_KEY, JSON.stringify(APP.assetTypeOverrides || {}));
+}
 
 function wireNavTabs() {
   document.querySelectorAll(".nav-tab").forEach(btn => {
@@ -114,14 +141,15 @@ function wireUpload() {
     zone.classList.add("drag-over");
   });
   zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
-  zone.addEventListener("drop", e => {
+  zone.addEventListener("drop", async e => {
     e.preventDefault();
     zone.classList.remove("drag-over");
-    handleFiles(e.dataTransfer.files);
+    const files = await getDroppedCSVFiles(e.dataTransfer);
+    handleFiles(files);
   });
 
   input.addEventListener("change", () => {
-    handleFiles(input.files);
+    handleFiles(getCSVFiles(input.files));
     input.value = "";
   });
 
@@ -160,8 +188,77 @@ function wireExport() {
 // ============================================
 // FILE HANDLING
 // ============================================
+function getCSVFiles(fileList) {
+  return Array.from(fileList || []).filter(file => isCSVFile(file));
+}
+
+function isCSVFile(file) {
+  return file && (
+    String(file.name || "").toLowerCase().endsWith(".csv") ||
+    String(file.type || "").toLowerCase().includes("csv")
+  );
+}
+
+async function getDroppedCSVFiles(dataTransfer) {
+  const entries = Array.from(dataTransfer.items || [])
+    .map(item => item.webkitGetAsEntry ? item.webkitGetAsEntry() : null)
+    .filter(Boolean);
+
+  if (!entries.length) return getCSVFiles(dataTransfer.files);
+
+  const files = [];
+  for (const entry of entries) {
+    files.push(...await readDroppedEntryFiles(entry));
+  }
+
+  return files.filter(file => isCSVFile(file));
+}
+
+async function readDroppedEntryFiles(entry) {
+  if (!entry) return [];
+
+  if (entry.isFile) {
+    return [await readDroppedFileEntry(entry)];
+  }
+
+  if (entry.isDirectory) {
+    const reader = entry.createReader();
+    const files = [];
+    let batch = [];
+
+    do {
+      batch = await readDroppedDirectoryEntries(reader);
+      for (const child of batch) {
+        files.push(...await readDroppedEntryFiles(child));
+      }
+    } while (batch.length);
+
+    return files;
+  }
+
+  return [];
+}
+
+function readDroppedFileEntry(entry) {
+  return new Promise((resolve, reject) => {
+    entry.file(resolve, reject);
+  });
+}
+
+function readDroppedDirectoryEntries(reader) {
+  return new Promise((resolve, reject) => {
+    reader.readEntries(resolve, reject);
+  });
+}
+
 async function handleFiles(fileList) {
-  for (const file of fileList) {
+  const files = getCSVFiles(fileList);
+  if (!files.length) {
+    alert("No CSV files found. Drag multiple .csv files or a folder containing CSV files.");
+    return;
+  }
+
+  for (const file of files) {
     let parsedFile = null;
 
     try {
@@ -222,6 +319,8 @@ function clearAll() {
   APP.placementMeta = [];
   APP.wowResults = [];
   APP.metricFilters = { google: {}, meta: {} };
+  APP.assetTypeOverrides = {};
+  localStorage.removeItem(ASSET_TYPE_OVERRIDE_STORAGE_KEY);
   APP.hideMetrics = { google: false, meta: false, placement: false };
   APP.actionMetricGuardrails = {
     google: { ctr: 0, clickToInstall: 0 },
@@ -772,6 +871,7 @@ function normalizeGoogleAds(file) {
     const asset =
       getColExact(row, headers, ["asset", "app asset"]) ||
       getColByIndex(row, headers, "asset", "asset type");
+    const assetLabel = asset || "Unknown Asset";
     const assetUrl =
       extractAssetUrl(asset) ||
       extractAssetUrl(getColExact(row, headers, [
@@ -796,7 +896,15 @@ function normalizeGoogleAds(file) {
       campaign: campaign || "Unknown Campaign",
       adGroup: adGroup || "Unknown Ad Group",
       assetType: normalizeGoogleAssetType(assetType),
-      asset: asset || "Unknown Asset",
+      contentType: applyAssetTypeOverride({
+        platform: "google",
+        campaign: campaign || "Unknown Campaign",
+        adGroup: adGroup || "Unknown Ad Group",
+        asset: assetLabel,
+        inferredType: inferGoogleContentType(assetType, assetLabel)
+      }),
+      rawAssetType: assetType || "",
+      asset: assetLabel,
       assetUrl,
       cost,
       impressions,
@@ -849,12 +957,23 @@ function normalizeGoogleAssetType(raw) {
 
   if (s.includes("headline")) return "Headline";
   if (s.includes("description") || s.includes("copywriting")) return "Description";
-  if (s.includes("youtube") && s.includes("video")) return "YouTube Video";
-  if (s.includes("marketing image") || (s.includes("image") && !s.includes("motion"))) return "Static Image";
-  if (s.includes("motion") || s.includes("video")) return "Video";
+  if (s.includes("html5") || s.includes("html 5")) return "HTML5";
+  if (s.includes("youtube") || s.includes("video")) return "Youtube Video";
+  if (s.includes("horizontal")) return "Horizontal Image";
+  if (s.includes("image") || s.includes("banner") || s.includes("marketing image")) return "Horizontal Image";
   if (s) return raw.trim();
 
   return "Other";
+}
+
+function inferGoogleContentType(assetType, asset) {
+  const s = `${assetType || ""} ${asset || ""}`.toLowerCase();
+
+  if (s.includes("kol")) return "KOL";
+  if (s.includes("headline") || s.includes("description") || s.includes("job") || s.includes("listing")) return "Job Listing";
+  if (s.includes("youtube") || s.includes("video") || s.includes("image") || s.includes("banner") || s.includes("html5")) return "Social Media";
+
+  return "Social Media";
 }
 
 // ============================================
@@ -871,6 +990,7 @@ function normalizeMetaAds(file) {
     const adName = getCol(row, headers, ["ad name"]);
     const adSetName = getCol(row, headers, ["ad set name", "adset name"]) || file.adGroupOverride || "";
     const campaign = getCol(row, headers, ["campaign name", "campaign"]) || file.campaignOverride || "";
+    const assetLabel = adName || "Unknown Ad";
     const rawCost = cleanNumber(getColExact(row, headers, ['amount spent (idr)', 'amount spent', 'spent']));
     const cost = rawCost / 13000;
     const impressions = cleanNumber(getCol(row, headers, ["impressions"]));
@@ -914,7 +1034,15 @@ function normalizeMetaAds(file) {
       campaign: campaign || "Unknown Campaign",
       adGroup: adSetName || "Unknown Ad Set",
       assetType: inferMetaAssetType(adName),
-      asset: adName || "Unknown Ad",
+      contentType: applyAssetTypeOverride({
+        platform: "meta",
+        campaign: campaign || "Unknown Campaign",
+        adGroup: adSetName || "Unknown Ad Set",
+        asset: assetLabel,
+        inferredType: inferMetaContentType(adName)
+      }),
+      rawAssetType: inferMetaAssetType(adName),
+      asset: assetLabel,
       cost,
       impressions,
       clicks: hasClicks ? clicks : null,
@@ -964,13 +1092,48 @@ function inferMetaChannel(row, headers) {
 function inferMetaAssetType(adName) {
   const s = (adName || "").toLowerCase();
 
-  if (s.includes("kol")) return "KOL";
-  if (s.includes("social") || s.includes("sosmed") || s.includes("socmed") || s.includes("tiktok style") || s.includes("reels") || s.includes("video")) return "Social Media";
-  if (s.includes("vina")) return "Vina Post Lebaran";
-  if (s.includes("carousel")) return "Job Listing Carousel";
-  if (s.includes("static") || s.includes("image") || s.includes("banner")) return "Static Image";
+  if (s.includes("carousel")) return "Carousel";
+  if (s.includes("video") || s.includes("motion") || s.includes("reels") || s.includes("tiktok")) return "Video";
+  if (s.includes("image") || s.includes("static") || s.includes("banner")) return "Static Image";
 
-  return "Uncategorized";
+  return "Ad";
+}
+
+function inferMetaContentType(adName) {
+  const s = (adName || "").toLowerCase();
+
+  if (s.includes("kol")) return "KOL";
+  if (s.includes("manufacture") || s.includes("crew store") || s.includes("carousel") || s.includes("job listing") || s.includes("job")) return "Job Listing";
+  if (s.includes("social") || s.includes("sosmed") || s.includes("socmed") || s.includes("tiktok style") || s.includes("reels") || s.includes("video") || s.includes("vina")) return "Social Media";
+
+  return "Social Media";
+}
+
+function assetTypeOverrideKey({ platform, campaign, adGroup, asset }) {
+  return [
+    platform || "",
+    campaign || "",
+    adGroup || "",
+    asset || ""
+  ].map(part => String(part).trim().toLowerCase()).join("||");
+}
+
+function applyAssetTypeOverride({ platform, campaign, adGroup, asset, inferredType }) {
+  const key = assetTypeOverrideKey({ platform, campaign, adGroup, asset });
+  const override = APP.assetTypeOverrides[key];
+  if (override) return normalizeAssetTypeBucket(override);
+
+  return normalizeAssetTypeBucket(inferredType);
+}
+
+function normalizeAssetTypeBucket(value) {
+  const s = String(value || "").toLowerCase().trim();
+
+  if (s.includes("kol")) return "KOL";
+  if (s.includes("job") || s.includes("listing") || s.includes("headline") || s.includes("description")) return "Job Listing";
+  if (s.includes("social") || s.includes("sosmed") || s.includes("socmed") || s.includes("video") || s.includes("image") || s.includes("banner")) return "Social Media";
+
+  return CONTENT_TYPE_OPTIONS.includes(value) ? value : "Social Media";
 }
 
 function inferFromFilename(name, type) {
@@ -1035,7 +1198,7 @@ function groupAndAggregate(rows, options = {}) {
     const channel = row.platform === "google" && collapseGooglePlacement
       ? "All Google placements"
       : row.channel;
-    const key = `${row.week}||${row.platform}||${channel}||${row.campaign}||${row.adGroup}||${row.assetType}||${row.asset}`;
+    const key = `${row.week}||${row.platform}||${channel}||${row.campaign}||${row.adGroup}||${row.assetType}||${row.contentType || ""}||${row.asset}`;
 
     if (!grouped.has(key)) {
       grouped.set(key, {
@@ -1044,6 +1207,8 @@ function groupAndAggregate(rows, options = {}) {
         campaign: row.campaign,
         adGroup: row.adGroup,
         assetType: row.assetType,
+        contentType: row.contentType || "Social Media",
+        rawAssetType: row.rawAssetType || "",
         asset: row.asset,
         assetUrl: row.assetUrl || "",
         cost: 0,
@@ -1073,6 +1238,8 @@ function groupAndAggregate(rows, options = {}) {
     if (row.qualityRanking) g.qualityRanking = row.qualityRanking;
     if (row.engagementRanking) g.engagementRanking = row.engagementRanking;
     if (row.conversionRanking) g.conversionRanking = row.conversionRanking;
+    if (!g.contentType && row.contentType) g.contentType = row.contentType;
+    if (!g.rawAssetType && row.rawAssetType) g.rawAssetType = row.rawAssetType;
     if (!g.assetUrl && row.assetUrl) g.assetUrl = row.assetUrl;
   }
 
@@ -1231,7 +1398,7 @@ function computePlacementAnalysis(groupedRows) {
       continue;
     }
 
-    const key = `${row.platform}||${row.campaign}||${row.adGroup}||${row.assetType}||${row.channel}`;
+    const key = `${row.platform}||${row.campaign}||${row.adGroup}||${row.assetType}||${row.contentType || ""}||${row.channel}`;
 
     if (!byPlacement.has(key)) {
       byPlacement.set(key, {
@@ -1239,6 +1406,7 @@ function computePlacementAnalysis(groupedRows) {
         campaign: row.campaign,
         adGroup: row.adGroup,
         assetType: row.assetType,
+        contentType: row.contentType || "Social Media",
         placement: row.channel,
         cost: 0,
         impressions: 0,
@@ -1289,6 +1457,7 @@ function computePlacementAnalysis(groupedRows) {
       clickToInstall,
       costPerInstall,
       costShare,
+      costProportion: costShare,
       rowCostShare: safeDivide(p.cost, campaignTotals[totalKey]),
       guardrailStatus,
       actionPlan: guardrailStatus === "Above Guardrail" ? "PAUSE" : "STAY"
@@ -1305,6 +1474,7 @@ function checkGuardrail(platform, campaign, placement, costShare) {
     const limit = APP.guardrails.meta[placement];
 
     if (limit && pct > limit) return "Above Guardrail";
+    if (limit && pct < limit * UNDERSPEND_LIMIT_RATIO) return "Underspending";
     if (limit) return "Within Guardrail";
 
     return "N/A";
@@ -1324,6 +1494,7 @@ function checkGuardrail(platform, campaign, placement, costShare) {
     else if (placement === "YouTube") limit = config.youtube;
 
     if (limit && pct > limit) return "Above Guardrail";
+    if (limit && pct < limit * UNDERSPEND_LIMIT_RATIO) return "Underspending";
     if (limit) return "Within Guardrail";
 
     return "N/A";
@@ -1409,6 +1580,7 @@ function computeWoW(allGrouped) {
       campaign: curr.campaign,
       adGroup: curr.adGroup,
       assetType: curr.assetType,
+      contentType: curr.contentType,
       asset: curr.asset,
       currCost: curr.cost,
       prevCost: prev.cost,
@@ -1455,6 +1627,7 @@ function aggregateRowsForWoW(rows) {
         campaign: row.campaign,
         adGroup: row.adGroup,
         assetType: row.assetType,
+        contentType: row.contentType || "Social Media",
         asset: row.asset,
         cost: 0,
         impressions: 0,
@@ -1487,7 +1660,7 @@ function aggregateRowsForWoW(rows) {
 
 function wowCompareKey(row) {
   const placementPart = row.platform === "google" ? "" : row.channel;
-  return `${row.platform}||${placementPart}||${row.campaign}||${row.adGroup}||${row.assetType}||${row.asset}`;
+  return `${row.platform}||${placementPart}||${row.campaign}||${row.adGroup}||${row.assetType}||${row.contentType || ""}||${row.asset}`;
 }
 
 // ============================================
@@ -1803,7 +1976,8 @@ function getDimensionFilterConfig() {
     { key: "channel", label: "Channel", kind: "text", get: r => r.channel, format: String },
     { key: "campaign", label: "Campaign", kind: "text", get: r => r.campaign, format: String },
     { key: "adGroup", label: "Ad Group", kind: "text", get: r => r.adGroup, format: String },
-    { key: "assetType", label: "Asset Type", kind: "text", get: r => r.assetType, format: String }
+    { key: "assetType", label: "Asset Type", kind: "text", get: r => r.assetType, format: String },
+    { key: "contentType", label: "Content Type", kind: "text", get: r => r.contentType, format: String }
   ];
 }
 
@@ -1964,8 +2138,32 @@ function renderCampaignSummaryCards(containerId, rows) {
   }
 
   container.innerHTML = `
-    <div class="summary-section-title">Campaign Analysis</div>
-    ${groups.map(([campaign, items]) => renderSummaryCard(campaign, "All ad groups and asset types", items)).join("")}
+    <div class="summary-section-title">Campaign Analysis by Asset Type</div>
+    ${groups.map(([campaign, items]) => renderCampaignAssetTypeSummary(campaign, items)).join("")}
+  `;
+}
+
+function renderCampaignAssetTypeSummary(campaign, rows) {
+  const byAssetType = {};
+
+  for (const row of rows) {
+    const key = row.assetType || "Unknown";
+    if (!byAssetType[key]) byAssetType[key] = [];
+    byAssetType[key].push(row);
+  }
+
+  const assetGroups = Object.entries(byAssetType)
+    .sort((a, b) => b[1].reduce((s, r) => s + r.cost, 0) - a[1].reduce((s, r) => s + r.cost, 0));
+
+  return `
+    <div class="campaign-analysis-heading">
+      <span>${esc(campaign)}</span>
+      <small>${fmtNum(rows.length)} rows</small>
+    </div>
+    ${renderSummaryCard("Total", "All asset types", rows)}
+    ${assetGroups.map(([assetType, items]) =>
+      renderSummaryCard(assetType, `${campaign} / all ad groups`, items)
+    ).join("")}
   `;
 }
 
@@ -2065,6 +2263,7 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
     ${renderMetricHeader(dimensionByKey.campaign, rows, platform, false)}
     ${renderMetricHeader(dimensionByKey.adGroup, rows, platform, false)}
     ${renderMetricHeader(dimensionByKey.assetType, rows, platform, false)}
+    ${renderMetricHeader(dimensionByKey.contentType, rows, platform, false)}
     <th>Asset</th>
     ${hideMetrics ? "" : `
       ${showCountColumn ? renderMetricHeader(metricByKey.count, rows, platform) : ""}
@@ -2115,6 +2314,7 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
       <td>${esc(row.campaign)}</td>
       <td>${esc(row.adGroup)}</td>
       <td>${esc(row.assetType)}</td>
+      <td>${renderAssetTypeOverrideInput(row)}</td>
       <td>${renderAssetCell(row)}</td>
       ${hideMetrics ? "" : `
         ${showCountColumn ? `<td class="numeric">${fmtNum(row.count)}</td>` : ""}
@@ -2132,11 +2332,12 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
     </tr>`;
   }).join("");
 
+  wireAssetTypeOverrideInputs(table);
   wireMetricHeaderFilters(table, platform);
 }
 
 function analysisTableColspan(showPlacementColumn, showCountColumn, hideMetrics) {
-  const dimensionCols = (showPlacementColumn ? 1 : 0) + 4; // campaign, ad group, asset type, asset
+  const dimensionCols = (showPlacementColumn ? 1 : 0) + 5; // campaign, ad group, asset type, content type, asset
   const metricCols = hideMetrics ? 0 : (showCountColumn ? 10 : 9);
   return dimensionCols + metricCols + 1; // action plan
 }
@@ -2148,6 +2349,42 @@ function renderAssetCell(row) {
   if (!url) return `<strong>${esc(label)}</strong>`;
 
   return `<a class="asset-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><strong>${esc(label)}</strong></a>`;
+}
+
+function renderAssetTypeOverrideInput(row) {
+  return `
+    <select
+      class="asset-type-override-input"
+      data-asset-override-platform="${esc(row.platform)}"
+      data-asset-override-campaign="${esc(row.campaign)}"
+      data-asset-override-ad-group="${esc(row.adGroup)}"
+      data-asset-override-asset="${esc(row.asset)}"
+      title="Edit content type."
+    >
+      ${CONTENT_TYPE_OPTIONS.map(type => `<option value="${esc(type)}" ${row.contentType === type ? "selected" : ""}>${esc(type)}</option>`).join("")}
+    </select>
+  `;
+}
+
+function wireAssetTypeOverrideInputs(table) {
+  table.querySelectorAll("[data-asset-override-asset]").forEach(input => {
+    input.addEventListener("change", e => {
+      const target = e.target;
+      const key = assetTypeOverrideKey({
+        platform: target.dataset.assetOverridePlatform,
+        campaign: target.dataset.assetOverrideCampaign,
+        adGroup: target.dataset.assetOverrideAdGroup,
+        asset: target.dataset.assetOverrideAsset
+      });
+      const value = target.value.trim();
+
+      if (value) APP.assetTypeOverrides[key] = normalizeAssetTypeBucket(value);
+      else delete APP.assetTypeOverrides[key];
+
+      saveAssetTypeOverrides();
+      runAnalysis();
+    });
+  });
 }
 
 function extractAssetUrl(value) {
@@ -2295,6 +2532,7 @@ function renderPlacementAnalysis() {
     <th>Campaign</th>
     <th>Ad Group</th>
     <th>Asset Type</th>
+    <th>Content Type</th>
     <th>Placement</th>
     ${hideMetrics ? "" : `
       <th class="numeric">Cost</th>
@@ -2305,7 +2543,8 @@ function renderPlacementAnalysis() {
       <th class="numeric">Installs</th>
       <th class="numeric">Cost/Install</th>
       <th class="numeric">Row Share</th>
-      <th class="numeric">Campaign Placement Share</th>
+      <th class="numeric">Cost Proportion</th>
+      <th>Spend Status</th>
     `}
   </tr>`;
 
@@ -2315,6 +2554,7 @@ function renderPlacementAnalysis() {
       <td>${esc(p.campaign)}</td>
       <td>${esc(p.adGroup)}</td>
       <td>${esc(p.assetType)}</td>
+      <td>${esc(p.contentType || "-")}</td>
       <td>${esc(p.placement)}</td>
       ${hideMetrics ? "" : `
         <td class="numeric">${fmtCurrency(p.cost)}</td>
@@ -2325,7 +2565,8 @@ function renderPlacementAnalysis() {
         <td class="numeric">${fmtNum(p.installs)}</td>
         <td class="numeric">${p.installs > 0 ? fmtCurrency(p.costPerInstall) : "-"}</td>
         <td class="numeric">${fmtPct(p.rowCostShare)}</td>
-        <td class="numeric">${fmtPct(p.costShare)}</td>
+        <td class="numeric">${fmtPct(p.costProportion)}</td>
+        <td>${esc(p.guardrailStatus)}</td>
       `}
     </tr>
   `).join("");
@@ -2346,6 +2587,15 @@ function renderPlacementProportions(placements) {
       }))
     ),
     renderPlacementProportionSection(
+      "Asset Type Cost Mix by Campaign",
+      "Cost share inside each campaign, split by asset type",
+      buildCostMixGroups(placements, p => `${p.platform}||${p.campaign}`, p => ({
+        platform: p.platform,
+        title: p.campaign,
+        subtitle: p.platform === "google" ? "Google Ads" : "Meta Ads"
+      }), p => p.assetType || "Unknown")
+    ),
+    renderPlacementProportionSection(
       "Placement Mix by Ad Group",
       "Placement distribution inside each ad group",
       buildPlacementMixGroups(placements, p => `${p.platform}||${p.campaign}||${p.adGroup}`, p => ({
@@ -2364,6 +2614,56 @@ function renderPlacementProportions(placements) {
       }))
     )
   ].join("");
+}
+
+function buildCostMixGroups(rows, keyFn, metaFn, itemLabelFn) {
+  const groups = new Map();
+
+  for (const row of rows) {
+    const key = keyFn(row);
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        ...metaFn(row),
+        totalCost: 0,
+        totalImpressions: 0,
+        itemsByLabel: new Map()
+      });
+    }
+
+    const group = groups.get(key);
+    const label = itemLabelFn(row);
+    group.totalCost += row.cost || 0;
+    group.totalImpressions += row.impressions || 0;
+
+    if (!group.itemsByLabel.has(label)) {
+      group.itemsByLabel.set(label, {
+        placement: label,
+        cost: 0,
+        impressions: 0,
+        clicks: 0,
+        installs: 0
+      });
+    }
+
+    const item = group.itemsByLabel.get(label);
+    item.cost += row.cost || 0;
+    item.impressions += row.impressions || 0;
+    item.clicks += row.clicks || 0;
+    item.installs += row.installs || 0;
+  }
+
+  return [...groups.values()].map(group => ({
+    ...group,
+    items: [...group.itemsByLabel.values()]
+      .map(item => ({
+        ...item,
+        costShare: safeDivide(item.cost, group.totalCost),
+        ctr: safeDivide(item.clicks, item.impressions),
+        cpi: safeDivide(item.cost, item.installs)
+      }))
+      .sort((a, b) => b.costShare - a.costShare)
+  })).sort((a, b) => b.totalCost - a.totalCost);
 }
 
 function buildPlacementMixGroups(placements, keyFn, metaFn) {
@@ -2496,6 +2796,7 @@ function renderWoWAnalysis() {
     <th>Campaign</th>
     <th>Ad Group</th>
     <th>Asset Type</th>
+    <th>Content Type</th>
     <th>Asset</th>
     <th class="numeric">Cost WoW</th>
     <th class="numeric">Impr WoW</th>
@@ -2514,6 +2815,7 @@ function renderWoWAnalysis() {
       <td>${esc(r.campaign)}</td>
       <td>${esc(r.adGroup)}</td>
       <td>${esc(r.assetType)}</td>
+      <td>${esc(r.contentType || "-")}</td>
       <td><strong>${esc(r.asset)}</strong></td>
       <td class="numeric">${renderWoWDelta(r.wowCost)}</td>
       <td class="numeric">${renderWoWDelta(r.wowImpr)}</td>
@@ -2903,6 +3205,7 @@ function exportAnalysisCSV(rows, platform = "") {
     "Campaign",
     "Ad Group",
     "Asset Type",
+    "Content Type",
     "Asset",
     ...(includeCount ? ["Count"] : []),
     "Cost",
@@ -2923,6 +3226,7 @@ function exportAnalysisCSV(rows, platform = "") {
       csvEscape(r.campaign),
       csvEscape(r.adGroup),
       csvEscape(r.assetType),
+      csvEscape(r.contentType || ""),
       csvEscape(r.asset),
       ...(includeCount ? [r.count] : []),
       r.cost.toFixed(2),
@@ -2944,10 +3248,10 @@ function exportPlacementCSV() {
 
   const headers = [
     "Platform",
-    "Placement",
     "Campaign",
     "Ad Group",
     "Asset Type",
+    "Content Type",
     "Placement",
     "Cost",
     "Impr.",
@@ -2957,7 +3261,8 @@ function exportPlacementCSV() {
     "Installs",
     "Cost/Install",
     "Row Share",
-    "Campaign Placement Share"
+    "Cost Proportion",
+    "Spend Status"
   ];
 
   const lines = [headers.join(",")];
@@ -2968,6 +3273,7 @@ function exportPlacementCSV() {
       csvEscape(p.campaign),
       csvEscape(p.adGroup),
       csvEscape(p.assetType),
+      csvEscape(p.contentType || ""),
       csvEscape(p.placement),
       p.cost.toFixed(2),
       p.impressions,
@@ -2977,7 +3283,8 @@ function exportPlacementCSV() {
       p.installs,
       p.installs > 0 ? p.costPerInstall.toFixed(2) : "",
       (p.rowCostShare * 100).toFixed(2) + "%",
-      (p.costShare * 100).toFixed(2) + "%"
+      (p.costProportion * 100).toFixed(2) + "%",
+      p.guardrailStatus
     ].join(","));
   }
 
@@ -2992,6 +3299,7 @@ function exportWoWCSV() {
     "Campaign",
     "Ad Group",
     "Asset Type",
+    "Content Type",
     "Asset",
     "Cost WoW",
     "Impr WoW",
@@ -3012,6 +3320,7 @@ function exportWoWCSV() {
       csvEscape(r.campaign),
       csvEscape(r.adGroup),
       csvEscape(r.assetType),
+      csvEscape(r.contentType || ""),
       csvEscape(r.asset),
       r.wowCost !== null ? (r.wowCost * 100).toFixed(1) + "%" : "",
       r.wowImpr !== null ? (r.wowImpr * 100).toFixed(1) + "%" : "",
@@ -3034,6 +3343,7 @@ function exportInactiveCSV() {
     "Campaign",
     "Ad Group",
     "Asset Type",
+    "Content Type",
     "Asset",
     "Reason"
   ];
@@ -3047,6 +3357,7 @@ function exportInactiveCSV() {
       csvEscape(r.campaign),
       csvEscape(r.adGroup),
       csvEscape(r.assetType),
+      csvEscape(r.contentType || ""),
       csvEscape(r.asset),
       csvEscape(r.inactiveReason)
     ].join(","));
