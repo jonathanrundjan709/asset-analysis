@@ -715,6 +715,19 @@ function cleanNumberRaw(val) {
   return Number(s) || 0;
 }
 
+function cleanMetaPercentValue(val) {
+  if (val === null || val === undefined || val === "") return 0;
+  const raw = String(val).trim();
+  if (!raw || raw === "—" || raw === "-") return 0;
+  const numeric = cleanNumber(raw);
+  return raw.includes("%") ? numeric : numeric / 100;
+}
+
+function cleanMetaRatioValue(val) {
+  if (val === null || val === undefined || val === "") return 0;
+  return cleanNumber(val);
+}
+
 function hasMeaningfulActivity({ cost = 0, impressions = 0, clicks = 0, installs = 0 }) {
   return Number(cost) > 0 || Number(impressions) > 0 || Number(clicks) > 0 || Number(installs) > 0;
 }
@@ -1061,7 +1074,8 @@ function normalizeMetaAds(file) {
   const normalized = [];
   const inactive = [];
 
-  const hasClicks = headers.some(h => h.toLowerCase().includes("click") && !h.toLowerCase().includes("cost"));
+  const rawClickHeaders = ["link clicks", "clicks (all)", "clicks", "outbound clicks"];
+  const hasRawClicks = headers.some(h => rawClickHeaders.includes(h.toLowerCase().trim()));
 
   for (const row of rows) {
     const adName = getCol(row, headers, ["ad name"]);
@@ -1071,9 +1085,23 @@ function normalizeMetaAds(file) {
     const rawCost = cleanNumber(getColExact(row, headers, ['amount spent (idr)', 'amount spent', 'spent']));
     const cost = rawCost / getMetaIdrToSgdRate();
     const impressions = cleanNumber(getCol(row, headers, ["impressions"]));
+    const rawCtr = cleanMetaPercentValue(getColExact(row, headers, [
+      "ctr (all)",
+      "ctr",
+      "link ctr",
+      "outbound ctr"
+    ]));
+    const csvClickToInstall = cleanMetaRatioValue(getColExact(row, headers, [
+      "clicks to install",
+      "click to install",
+      "clicks>install",
+      "click>install",
+      "clicks>install%",
+      "click>install%"
+    ]));
 
     let clicks = 0;
-    if (hasClicks) {
+    if (hasRawClicks) {
       clicks = cleanNumber(getColExact(row, headers, [
         "link clicks",
         "clicks (all)",
@@ -1100,6 +1128,14 @@ function normalizeMetaAds(file) {
       }
     }
 
+    if (!clicks && installs > 0 && csvClickToInstall > 0) {
+      clicks = installs / csvClickToInstall;
+    }
+
+    if (!clicks && impressions > 0 && rawCtr > 0) {
+      clicks = impressions * rawCtr;
+    }
+
     const qualityRanking = getCol(row, headers, ["quality ranking"]);
     const engagementRanking = getCol(row, headers, ["engagement rate ranking", "engagement ranking"]);
     const conversionRanking = getCol(row, headers, ["conversion rate ranking", "conversion ranking"]);
@@ -1122,11 +1158,11 @@ function normalizeMetaAds(file) {
       asset: assetLabel,
       cost,
       impressions,
-      clicks: hasClicks ? clicks : null,
+      clicks: clicks > 0 ? clicks : null,
       installs,
       week: file.week,
       period,
-      hasClicks,
+      hasClicks: clicks > 0,
       qualityRanking: qualityRanking || "",
       engagementRanking: engagementRanking || "",
       conversionRanking: conversionRanking || "",
