@@ -5,6 +5,43 @@
 
 "use strict";
 
+const DEFAULT_ASSET_ANALYSIS_CONFIG = {
+  currency: {
+    metaIdrToSgd: 13000
+  },
+  assetTypes: {
+    google: ["Headline", "Description", "Horizontal Image", "Youtube Video", "HTML5"],
+    meta: ["Social Media", "KOL", "Job Listing"]
+  },
+  guardrails: {
+    google: {
+      Headline: { ctr: 0, clickToInstall: 0 },
+      Description: { ctr: 0, clickToInstall: 0 },
+      "Horizontal Image": { ctr: 0, clickToInstall: 0 },
+      "Youtube Video": { ctr: 0, clickToInstall: 0 },
+      HTML5: { ctr: 0, clickToInstall: 0 }
+    },
+    meta: {
+      KOL: { ctr: 0, clickToInstall: 0 },
+      "Job Listing": { ctr: 0, clickToInstall: 0 },
+      "Social Media": { ctr: 0, clickToInstall: 0 }
+    }
+  },
+  storageKeys: {
+    assetTypeOverrides: "assetTypeOverrides.v1"
+  },
+  uiText: {
+    noCsvFiles: "No CSV files found. Drag multiple .csv files or a folder containing CSV files.",
+    exportReady: "Google Sheets export is ready. Import the downloaded TSV file into Google Sheets, or paste from clipboard if your browser allowed clipboard access.",
+    unreadableCsvFallback: "Please check the file format."
+  }
+};
+
+const ASSET_ANALYSIS_CONFIG = mergeConfig(
+  DEFAULT_ASSET_ANALYSIS_CONFIG,
+  window.ASSET_ANALYSIS_CONFIG || {}
+);
+
 // ============================================
 // STATE
 // ============================================
@@ -32,39 +69,70 @@ const APP = {
 };
 
 const NO_METRIC_VALUES_SELECTED = "__no_metric_values_selected__";
-const ASSET_TYPE_OVERRIDE_STORAGE_KEY = "assetTypeOverrides.v1";
-const ASSET_TYPE_OPTIONS = [
-  "Social Media",
-  "KOL",
-  "Job Listing"
-];
+const ASSET_TYPE_OVERRIDE_STORAGE_KEY = ASSET_ANALYSIS_CONFIG.storageKeys.assetTypeOverrides;
+const ASSET_TYPE_OPTIONS = ASSET_ANALYSIS_CONFIG.assetTypes.meta;
 const CONTENT_TYPE_OPTIONS = ASSET_TYPE_OPTIONS;
-const SUMMARY_GUARDRAIL_GROUPS = {
-  google: ["Headline", "Description", "Horizontal Image", "Youtube Video", "HTML5"],
-  meta: ["KOL", "Job Listing", "Social Media"]
-};
+const SUMMARY_GUARDRAIL_GROUPS = buildSummaryGuardrailGroups();
 
 function createDefaultActionMetricGuardrails() {
-  return {
-    google: {
-      Headline: { ctr: 0, clickToInstall: 0 },
-      Description: { ctr: 0, clickToInstall: 0 },
-      "Horizontal Image": { ctr: 0, clickToInstall: 0 },
-      "Youtube Video": { ctr: 0, clickToInstall: 0 },
-      HTML5: { ctr: 0, clickToInstall: 0 }
-    },
-    meta: {
-      KOL: { ctr: 0, clickToInstall: 0 },
-      "Job Listing": { ctr: 0, clickToInstall: 0 },
-      "Social Media": { ctr: 0, clickToInstall: 0 }
+  return cloneGuardrails(ASSET_ANALYSIS_CONFIG.guardrails);
+}
+
+function mergeConfig(defaults, overrides) {
+  if (!isPlainObject(defaults)) return isPlainObject(overrides) ? { ...overrides } : overrides ?? defaults;
+  const merged = { ...defaults };
+  if (!isPlainObject(overrides)) return merged;
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (Array.isArray(value)) {
+      merged[key] = [...value];
+    } else if (isPlainObject(value) && isPlainObject(defaults[key])) {
+      merged[key] = mergeConfig(defaults[key], value);
+    } else if (value !== undefined) {
+      merged[key] = value;
     }
-  };
+  }
+
+  return merged;
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function cloneGuardrails(guardrails) {
+  const cloned = {};
+  for (const [platform, groups] of Object.entries(guardrails || {})) {
+    cloned[platform] = {};
+    for (const [group, values] of Object.entries(groups || {})) {
+      cloned[platform][group] = {
+        ctr: Number(values?.ctr) || 0,
+        clickToInstall: Number(values?.clickToInstall) || 0
+      };
+    }
+  }
+  return cloned;
+}
+
+function buildSummaryGuardrailGroups() {
+  return Object.fromEntries(
+    Object.entries(ASSET_ANALYSIS_CONFIG.guardrails || {}).map(([platform, groups]) => [
+      platform,
+      Object.keys(groups || {})
+    ])
+  );
+}
+
+function getMetaIdrToSgdRate() {
+  return Number(ASSET_ANALYSIS_CONFIG.currency.metaIdrToSgd) ||
+    DEFAULT_ASSET_ANALYSIS_CONFIG.currency.metaIdrToSgd;
 }
 
 // ============================================
 // INIT
 // ============================================
 document.addEventListener("DOMContentLoaded", () => {
+  renderConfigurableGuardrails();
   loadAssetTypeOverrides();
   wireNavTabs();
   wireUpload();
@@ -73,6 +141,30 @@ document.addEventListener("DOMContentLoaded", () => {
   wireSortControls();
   wireExport();
 });
+
+function renderConfigurableGuardrails() {
+  renderGuardrailRows("googleGuardrailRows", "google");
+  renderGuardrailRows("metaGuardrailRows", "meta");
+}
+
+function renderGuardrailRows(containerId, platform) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const groups = ASSET_ANALYSIS_CONFIG.guardrails[platform] || {};
+  container.innerHTML = Object.entries(groups).map(([group, values]) => `
+    <label class="action-guardrail-row">
+      <span>${esc(group)}</span>
+      <input type="number" class="guardrail-input" data-action-guardrail="${esc(platform)}.${esc(group)}.ctr" value="${formatGuardrailInputValue(values.ctr)}" min="0" step="0.01" />
+      <input type="number" class="guardrail-input" data-action-guardrail="${esc(platform)}.${esc(group)}.clickToInstall" value="${formatGuardrailInputValue(values.clickToInstall)}" min="0" step="0.01" />
+    </label>
+  `).join("");
+}
+
+function formatGuardrailInputValue(value) {
+  const percentValue = (Number(value) || 0) * 100;
+  return String(Number(percentValue.toFixed(4)));
+}
 
 function loadAssetTypeOverrides() {
   try {
@@ -245,7 +337,7 @@ function readDroppedDirectoryEntries(reader) {
 async function handleFiles(fileList) {
   const files = getCSVFiles(fileList);
   if (!files.length) {
-    alert("No CSV files found. Drag multiple .csv files or a folder containing CSV files.");
+    alert(ASSET_ANALYSIS_CONFIG.uiText.noCsvFiles);
     return;
   }
 
@@ -256,7 +348,7 @@ async function handleFiles(fileList) {
       parsedFile = await parseUploadedFile(file);
     } catch (err) {
       console.error(`Failed to parse ${file.name}`, err);
-      alert(`Could not read ${file.name}. ${err.message || "Please check the file format."}`);
+      alert(`Could not read ${file.name}. ${err.message || ASSET_ANALYSIS_CONFIG.uiText.unreadableCsvFallback}`);
       continue;
     }
 
@@ -314,7 +406,13 @@ function clearAll() {
   APP.hideMetrics = { google: false, meta: false, placement: false };
   APP.actionMetricGuardrails = createDefaultActionMetricGuardrails();
   document.querySelectorAll("[data-hide-metrics]").forEach(input => { input.checked = false; });
-  document.querySelectorAll("[data-action-guardrail]").forEach(input => { input.value = 0; });
+  document.querySelectorAll("[data-action-guardrail]").forEach(input => {
+    const parts = input.dataset.actionGuardrail.split(".");
+    const platform = parts[0];
+    const metric = parts[parts.length - 1];
+    const group = parts.slice(1, -1).join(".");
+    input.value = formatGuardrailInputValue(APP.actionMetricGuardrails[platform]?.[group]?.[metric]);
+  });
   document.querySelectorAll("[data-sort-table]").forEach(select => {
     const tableKey = select.dataset.sortTable;
     select.value = APP.tableSort[tableKey] || select.value;
@@ -971,7 +1069,7 @@ function normalizeMetaAds(file) {
     const campaign = getCol(row, headers, ["campaign name", "campaign"]) || file.campaignOverride || "";
     const assetLabel = adName || "Unknown Ad";
     const rawCost = cleanNumber(getColExact(row, headers, ['amount spent (idr)', 'amount spent', 'spent']));
-    const cost = rawCost / 13000;
+    const cost = rawCost / getMetaIdrToSgdRate();
     const impressions = cleanNumber(getCol(row, headers, ["impressions"]));
 
     let clicks = 0;
@@ -2609,7 +2707,7 @@ function exportToGoogleSheets(content, filename) {
 
   URL.revokeObjectURL(url);
 
-  alert("Google Sheets export is ready. Import the downloaded TSV file into Google Sheets, or paste from clipboard if your browser allowed clipboard access.");
+  alert(ASSET_ANALYSIS_CONFIG.uiText.exportReady);
 }
 
 function sheetEscape(val) {
