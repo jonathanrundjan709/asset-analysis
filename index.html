@@ -72,50 +72,12 @@
             <div class="guardrail-defaults">
               <h4>Google Ads</h4>
               <div class="action-guardrail-subhead"><span>Group</span><span>CTR %</span><span>Click&gt;Install %</span></div>
-              <label class="action-guardrail-row">
-                <span>Headline</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="google.Headline.ctr" value="0" min="0" step="0.01" />
-                <input type="number" class="guardrail-input" data-action-guardrail="google.Headline.clickToInstall" value="0" min="0" step="0.01" />
-              </label>
-              <label class="action-guardrail-row">
-                <span>Description</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="google.Description.ctr" value="0" min="0" step="0.01" />
-                <input type="number" class="guardrail-input" data-action-guardrail="google.Description.clickToInstall" value="0" min="0" step="0.01" />
-              </label>
-              <label class="action-guardrail-row">
-                <span>Horizontal Image</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="google.Horizontal Image.ctr" value="0" min="0" step="0.01" />
-                <input type="number" class="guardrail-input" data-action-guardrail="google.Horizontal Image.clickToInstall" value="0" min="0" step="0.01" />
-              </label>
-              <label class="action-guardrail-row">
-                <span>Youtube Video</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="google.Youtube Video.ctr" value="0" min="0" step="0.01" />
-                <input type="number" class="guardrail-input" data-action-guardrail="google.Youtube Video.clickToInstall" value="0" min="0" step="0.01" />
-              </label>
-              <label class="action-guardrail-row">
-                <span>HTML5</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="google.HTML5.ctr" value="0" min="0" step="0.01" />
-                <input type="number" class="guardrail-input" data-action-guardrail="google.HTML5.clickToInstall" value="0" min="0" step="0.01" />
-              </label>
+              <div id="googleGuardrailRows"></div>
             </div>
             <div class="guardrail-defaults">
               <h4>Meta Ads</h4>
               <div class="action-guardrail-subhead"><span>Group</span><span>CTR %</span><span>Click&gt;Install %</span></div>
-              <label class="action-guardrail-row">
-                <span>KOL</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="meta.KOL.ctr" value="0" min="0" step="0.01" />
-                <input type="number" class="guardrail-input" data-action-guardrail="meta.KOL.clickToInstall" value="0" min="0" step="0.01" />
-              </label>
-              <label class="action-guardrail-row">
-                <span>Job Listing</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="meta.Job Listing.ctr" value="0" min="0" step="0.01" />
-                <input type="number" class="guardrail-input" data-action-guardrail="meta.Job Listing.clickToInstall" value="0" min="0" step="0.01" />
-              </label>
-              <label class="action-guardrail-row">
-                <span>Social Media</span>
-                <input type="number" class="guardrail-input" data-action-guardrail="meta.Social Media.ctr" value="0" min="0" step="0.01" />
-                <input type="number" class="guardrail-input" data-action-guardrail="meta.Social Media.clickToInstall" value="0" min="0" step="0.01" />
-              </label>
+              <div id="metaGuardrailRows"></div>
             </div>
           </div>
         </div>
@@ -253,6 +215,7 @@
 
   </div>
 
+  <script src="./config.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
