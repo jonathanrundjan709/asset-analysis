@@ -2039,13 +2039,14 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
   const hideMetrics = APP.hideMetrics && APP.hideMetrics[platform];
   const showPlacementColumn = platform !== "google";
   const showCountColumn = platform !== "google";
+  const showContentTypeColumn = platform !== "google";
 
   thead.innerHTML = `<tr>
     ${showPlacementColumn ? renderMetricHeader(dimensionByKey.channel, rows, platform, false) : ""}
     ${renderMetricHeader(dimensionByKey.campaign, rows, platform, false)}
     ${renderMetricHeader(dimensionByKey.adGroup, rows, platform, false)}
     ${renderMetricHeader(dimensionByKey.assetType, rows, platform, false)}
-    ${renderMetricHeader(dimensionByKey.contentType, rows, platform, false)}
+    ${showContentTypeColumn ? renderMetricHeader(dimensionByKey.contentType, rows, platform, false) : ""}
     <th>Asset</th>
     ${hideMetrics ? "" : `
       ${showCountColumn ? renderMetricHeader(metricByKey.count, rows, platform) : ""}
@@ -2074,7 +2075,7 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
   const sorted = sortRowsForTable(activeRows, platform);
 
   if (!sorted.length) {
-    tbody.innerHTML = `<tr><td colspan="${analysisTableColspan(showPlacementColumn, showCountColumn, hideMetrics)}" class="empty-table-cell">No rows match the current filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${analysisTableColspan(showPlacementColumn, showContentTypeColumn, showCountColumn, hideMetrics)}" class="empty-table-cell">No rows match the current filters.</td></tr>`;
     return;
   }
 
@@ -2096,7 +2097,7 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
       <td>${esc(row.campaign)}</td>
       <td>${esc(row.adGroup)}</td>
       <td>${esc(row.assetType)}</td>
-      <td>${renderAssetTypeOverrideInput(row)}</td>
+      ${showContentTypeColumn ? `<td>${renderAssetTypeOverrideInput(row)}</td>` : ""}
       <td>${renderAssetCell(row)}</td>
       ${hideMetrics ? "" : `
         ${showCountColumn ? `<td class="numeric">${fmtNum(row.count)}</td>` : ""}
@@ -2114,12 +2115,12 @@ function renderAnalysisTable(tableId, rows, benchmarks, platform) {
     </tr>`;
   }).join("");
 
-  wireAssetTypeOverrideInputs(table);
+  if (showContentTypeColumn) wireAssetTypeOverrideInputs(table);
   wireMetricHeaderFilters(table, platform);
 }
 
-function analysisTableColspan(showPlacementColumn, showCountColumn, hideMetrics) {
-  const dimensionCols = (showPlacementColumn ? 1 : 0) + 5; // campaign, ad group, asset type, content type, asset
+function analysisTableColspan(showPlacementColumn, showContentTypeColumn, showCountColumn, hideMetrics) {
+  const dimensionCols = (showPlacementColumn ? 1 : 0) + (showContentTypeColumn ? 1 : 0) + 4; // campaign, ad group, asset type, asset
   const metricCols = hideMetrics ? 0 : (showCountColumn ? 10 : 9);
   return dimensionCols + metricCols + 1; // action plan
 }
@@ -2587,12 +2588,13 @@ function handleExport(type) {
 function exportAnalysisSheet(rows, platform = "") {
   const includeChannel = platform !== "google";
   const includeCount = platform !== "google";
+  const includeContentType = platform !== "google";
   const headers = [
     ...(includeChannel ? ["Channel"] : []),
     "Campaign",
     "Ad Group",
     "Asset Type",
-    "Content Type",
+    ...(includeContentType ? ["Content Type"] : []),
     "Asset",
     ...(includeCount ? ["Count"] : []),
     "Cost",
@@ -2613,7 +2615,7 @@ function exportAnalysisSheet(rows, platform = "") {
       r.campaign,
       r.adGroup,
       r.assetType,
-      r.contentType || "",
+      ...(includeContentType ? [r.contentType || ""] : []),
       r.asset,
       ...(includeCount ? [r.count] : []),
       r.cost.toFixed(2),
